@@ -98,6 +98,18 @@ public class ProviderTests
     }
 
     [Fact]
+    public async Task Anthropic_cache_counters_that_arrive_at_the_end_of_the_stream_are_counted()
+    {
+        var stream = AnthropicTextStream
+            .Replace("\"usage\":{\"output_tokens\":5}}", "\"usage\":{\"output_tokens\":5,\"cache_read_input_tokens\":90}}");
+        var handler = new FakeHttpHandler(stream);
+
+        var events = await Collect(new AnthropicProvider("k", new HttpClient(handler), baseUrl: "https://gateway.example.com"), Request());
+
+        Assert.Equal(90, ((ModelResponse)events[^1]).Usage.CacheReadTokens);
+    }
+
+    [Fact]
     public async Task Anthropic_gateway_cache_markers_can_be_turned_off()
     {
         var handler = new FakeHttpHandler(AnthropicTextStream);

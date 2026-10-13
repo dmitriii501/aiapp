@@ -128,6 +128,11 @@ public sealed class AnthropicProvider : IModelProvider
             {
                 stopReason = messageDelta.Delta.StopReason?.Raw();
                 outputTokens = messageDelta.Usage.OutputTokens;
+                // Some gateways only know the cache counters at the end of the stream and report them here.
+                if (messageDelta.Usage.CacheReadInputTokens is > 0 and { } deltaCache)
+                    cacheRead = deltaCache;
+                if (messageDelta.Usage.InputTokens is > 0 and { } deltaInput)
+                    inputTokens = deltaInput;
             }
         }
 

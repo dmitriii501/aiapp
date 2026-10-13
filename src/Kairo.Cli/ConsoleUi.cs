@@ -76,9 +76,10 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
     {
         lock (_gate)
         {
-            if (!interactive)
+            // Without a keyboard (piped input, a script, a service) there is nobody to ask: deny instead of crashing on ReadKey.
+            if (!interactive || Console.IsInputRedirected)
             {
-                Write(ConsoleColor.Yellow, $"  ⎿ needs approval ({request.Reason}); denied in non-interactive mode. Use --allow \"{request.Tool}(...)\".\n");
+                Write(ConsoleColor.Yellow, $"  ⎿ needs approval ({request.Reason}); denied because there is no keyboard to ask. Use --allow \"{request.Tool}(...)\".\n");
                 return Task.FromResult(PermissionAnswer.Deny);
             }
 
