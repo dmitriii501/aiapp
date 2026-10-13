@@ -24,8 +24,10 @@ export function SettingsDialog() {
   const [effort, setEffort] = useState(settings?.effort ?? "default");
   const [mode, setMode] = useState<Mode>(settings?.mode ?? "default");
   const [key, setKey] = useState("");
+  const [braveKey, setBraveKey] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const hasBraveKey = settings?.braveKey ?? false;
   const hasKey = settings?.providers.find((p) => p.id === provider)?.hasKey ?? false;
   const anthropic = provider === "anthropic";
 
@@ -51,8 +53,9 @@ export function SettingsDialog() {
       { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode },
       key.trim() ? { provider, key: key.trim() } : undefined,
     );
+    const searchOk = ok && (braveKey.trim() ? await saveSettings({}, { provider: "brave", key: braveKey.trim() }) : true);
     setSaving(false);
-    if (ok) setOpen(false);
+    if (searchOk) setOpen(false);
   };
 
   return (
@@ -126,6 +129,33 @@ export function SettingsDialog() {
                 </option>
               ))}
             </select>
+          </Field>
+
+          <h3 className="dialog__section">Поиск в интернете</h3>
+          <Field
+            label="Ключ Brave Search API"
+            hint={
+              hasBraveKey
+                ? "Ключ сохранён в диспетчере учётных данных Windows. Введите новый, чтобы заменить. Вместо Brave можно указать свой SearXNG: [web] searxng_url в config.toml."
+                : "Нужен для инструмента WebSearch (бесплатный тариф есть на brave.com/search/api). Вместо него можно указать свой SearXNG: [web] searxng_url в config.toml."
+            }
+          >
+            <div className="input-row">
+              <input
+                className="input"
+                type="password"
+                value={braveKey}
+                onChange={(e) => setBraveKey(e.target.value)}
+                placeholder={hasBraveKey ? "••••••••••••" : "BSA…"}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {hasBraveKey && (
+                <button type="button" className="btn btn--secondary" onClick={() => void saveSettings({}, { provider: "brave", key: "" })}>
+                  Удалить
+                </button>
+              )}
+            </div>
           </Field>
 
           <h3 className="dialog__section">Разрешения</h3>

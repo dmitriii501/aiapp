@@ -15,6 +15,19 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
 
     public ISecretStore Secrets { get; } = secrets;
 
+    /// <summary>What WebSearch uses right now. A broken config.toml means no search, not a crash in the middle of a turn.</summary>
+    public Kairo.Tools.Web.WebSearchSettings WebSearch()
+    {
+        try
+        {
+            return ProviderFactory.WebSearchOf(LoadUser(), Secrets);
+        }
+        catch (FormatException)
+        {
+            return new Kairo.Tools.Web.WebSearchSettings();
+        }
+    }
+
     public KairoConfig LoadUser() => KairoConfig.Load(UserConfigDirectory, UserConfigDirectory, includeProject: false);
 
     /// <summary>The settings a session in <paramref name="workingDirectory"/> runs with (user + project config).</summary>
@@ -32,7 +45,8 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             Providers: ProviderFactory.ProviderIds
                 .Select(id => new ProviderStatus(id, !string.IsNullOrEmpty(ProviderFactory.ApiKey(id, Secrets))))
                 .ToList(),
-            Ready: ProviderFactory.Check(config, Secrets) is null);
+            Ready: ProviderFactory.Check(config, Secrets) is null,
+            BraveKey: !string.IsNullOrEmpty(ProviderFactory.BraveKey(Secrets)));
     }
 
     public Settings Update(SettingsUpdate update)
@@ -67,7 +81,7 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
 
     public Settings SetSecret(SecretSetParams p)
     {
-        if (!ProviderFactory.ProviderIds.Contains(p.Provider))
+        if (p.Provider != SecretNames.BraveSearch && !ProviderFactory.ProviderIds.Contains(p.Provider))
             throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестный провайдер «{p.Provider}».");
         var name = SecretNames.ApiKey(p.Provider);
         if (p.Key.Trim() is { Length: > 0 } key)

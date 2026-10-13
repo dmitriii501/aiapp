@@ -83,7 +83,7 @@ interface State {
   setMode(mode: Mode): Promise<void>;
   cycleMode(): Promise<void>;
   respond(requestId: string, decision: Decision): Promise<void>;
-  saveSettings(update: SettingsUpdate, key?: { provider: ProviderId; key: string }): Promise<boolean>;
+  saveSettings(update: SettingsUpdate, key?: { provider: ProviderId | "brave"; key: string }): Promise<boolean>;
   setSettingsOpen(open: boolean): void;
   setMcpOpen(open: boolean): void;
   openRollback(checkpointId: string): Promise<void>;

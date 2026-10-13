@@ -72,6 +72,8 @@ export interface Settings {
   mode: Mode;
   providers: ProviderStatus[];
   ready: boolean;
+  /** A Brave Search key is stored (or set in the environment): WebSearch works. */
+  braveKey?: boolean;
 }
 
 export interface SettingsUpdate {
@@ -233,7 +235,7 @@ export interface MethodMap {
   [Methods.AppInfo]: { params: NoParams; result: AppInfo };
   [Methods.SettingsGet]: { params: NoParams; result: Settings };
   [Methods.SettingsUpdate]: { params: SettingsUpdate; result: Settings };
-  [Methods.SecretSet]: { params: { provider: ProviderId; key: string }; result: Settings };
+  [Methods.SecretSet]: { params: { provider: ProviderId | "brave"; key: string }; result: Settings };
   [Methods.WorkspacePick]: { params: NoParams; result: { workspace?: Workspace } };
   [Methods.WorkspaceList]: { params: NoParams; result: { workspaces: Workspace[] } };
   [Methods.SessionList]: { params: NoParams; result: { sessions: SessionSummary[] } };

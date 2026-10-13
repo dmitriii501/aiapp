@@ -17,6 +17,9 @@ public static class SecretNames
 {
     /// <summary>The credential name for a provider's API key, e.g. <c>Kairo/anthropic</c>.</summary>
     public static string ApiKey(string providerId) => $"Kairo/{providerId}";
+
+    /// <summary>The key of the Brave Search API, used by the WebSearch tool.</summary>
+    public const string BraveSearch = "brave";
 }
 
 public sealed class InMemorySecretStore : ISecretStore

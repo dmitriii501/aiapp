@@ -188,6 +188,10 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
         Object.assign(settings, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
         return settings;
       case Methods.SecretSet:
+        if (p.provider === "brave") {
+          settings.braveKey = p.key.length > 0;
+          return settings;
+        }
         settings.providers = settings.providers.map((x) => (x.id === p.provider ? { ...x, hasKey: p.key.length > 0 } : x));
         settings.ready = settings.providers.some((x) => x.id === settings.provider && x.hasKey);
         return settings;

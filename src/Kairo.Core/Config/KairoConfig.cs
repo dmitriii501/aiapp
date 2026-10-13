@@ -30,6 +30,10 @@ namespace Kairo.Core.Config;
 /// window = 200000                                # tokens; 0 turns automatic compaction off
 /// compact_at = 0.8                               # summarize long sessions at this share of the window
 ///
+/// [web]
+/// search = "searxng"                             # "brave" (key in settings) or "searxng"
+/// searxng_url = "http://localhost:8080"          # your SearXNG instance, JSON format enabled
+///
 /// [update]
 /// check = false                                 # no automatic update checks
 /// </example>
@@ -49,6 +53,12 @@ public sealed class KairoConfig
 
     /// <summary>Overrides the update feed (<c>[update] url</c>): a GitHub repository, a web address or a folder. Read from the user's file only.</summary>
     public string? UpdateUrl { get; set; }
+
+    /// <summary>Web search backend (<c>[web] search</c>): "brave" or "searxng". Read from the user's file only.</summary>
+    public string? WebSearch { get; set; }
+
+    /// <summary>Address of a SearXNG instance (<c>[web] searxng_url</c>). Read from the user's file only: it receives the agent's queries.</summary>
+    public string? SearxngUrl { get; set; }
 
     public const int DefaultContextWindow = 128_000;
     public const double DefaultCompactAt = 0.8;
@@ -81,9 +91,10 @@ public sealed class KairoConfig
         if (includeProject)
         {
             // Updates replace the app itself: a repository must not be able to steer them.
-            var (check, url) = (config.UpdateCheck, config.UpdateUrl);
+            // Likewise the search backend: it receives what the agent searches for.
+            var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
-            (config.UpdateCheck, config.UpdateUrl) = (check, url);
+            (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
         }
         return config;
     }
@@ -176,6 +187,12 @@ public sealed class KairoConfig
                 if (share is { } s)
                     CompactAt = Math.Clamp(s, 0.3, 0.95);
             }
+        }
+
+        if (table.TryGetValue("web", out var w) && w is TomlTable web)
+        {
+            WebSearch = String(web, "search") ?? WebSearch;
+            SearxngUrl = String(web, "searxng_url") ?? SearxngUrl;
         }
 
         if (table.TryGetValue("update", out var u) && u is TomlTable update)

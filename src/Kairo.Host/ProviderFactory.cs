@@ -1,6 +1,7 @@
 using Kairo.Core.Config;
 using Kairo.Core.Models;
 using Kairo.Core.Secrets;
+using Kairo.Tools.Web;
 using Kairo.Providers.Anthropic;
 using Kairo.Providers.OpenAICompatible;
 
@@ -40,6 +41,16 @@ public static class ProviderFactory
         var env = Environment.GetEnvironmentVariable(providerId == Anthropic ? "ANTHROPIC_API_KEY" : "KAIRO_API_KEY");
         return !string.IsNullOrEmpty(env) ? env : secrets.Get(SecretNames.ApiKey(providerId));
     }
+
+    /// <summary>The Brave Search key for WebSearch: the environment variable wins over the stored key.</summary>
+    public static string? BraveKey(ISecretStore secrets)
+    {
+        var env = Environment.GetEnvironmentVariable("BRAVE_API_KEY");
+        return !string.IsNullOrEmpty(env) ? env : secrets.Get(SecretNames.ApiKey(SecretNames.BraveSearch));
+    }
+
+    public static WebSearchSettings WebSearchOf(KairoConfig config, ISecretStore secrets) =>
+        new(BraveKey(secrets), config.SearxngUrl, config.WebSearch);
 
     /// <summary>Whether <see cref="Create"/> would succeed.</summary>
     public static ProviderProblem? Check(KairoConfig config, ISecretStore secrets)

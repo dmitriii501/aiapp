@@ -104,7 +104,8 @@ public sealed record Settings(
     string? Effort,
     string Mode,
     IReadOnlyList<ProviderStatus> Providers,
-    bool Ready);
+    bool Ready,
+    bool BraveKey = false);
 
 /// <summary>Null fields stay unchanged. Effort "default" clears it.</summary>
 public sealed record SettingsUpdate(
@@ -114,7 +115,7 @@ public sealed record SettingsUpdate(
     string? Effort = null,
     string? Mode = null);
 
-/// <summary>An empty <see cref="Key"/> deletes the stored key.</summary>
+/// <summary>An empty <see cref="Key"/> deletes the stored key. Provider is a model provider or "brave" (the WebSearch key).</summary>
 public sealed record SecretSetParams(string Provider, string Key);
 
 // ---- Workspaces and sessions ----

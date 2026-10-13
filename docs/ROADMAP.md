@@ -49,7 +49,7 @@
 - [ ] Сабагенты
 - [ ] Хуки, скиллы, слэш-команды, память
 - [x] Compaction (автоматически на 80% окна и по `/compact`; полный журнал сессии остаётся)
-- [ ] Web search / fetch
+- [x] Web search / fetch (`WebFetch`, `WebSearch`: Brave Search API или свой SearXNG)
 - [ ] Песочница (AppContainer) для автономного режима
 
 ## M4 — Рой агентов

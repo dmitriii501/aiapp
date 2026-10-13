@@ -35,7 +35,7 @@ public sealed class AgentHost(
     private readonly Func<KairoConfig, IModelProvider> _createProvider = createProvider ?? (c => ProviderFactory.Create(c, settings.Secrets));
 
     /// <summary>Built-in tools plus whatever MCP servers are connected right now.</summary>
-    private ToolRegistry Tools() => new(BuiltinTools.All().Concat(mcp?.Tools ?? []));
+    private ToolRegistry Tools() => new(BuiltinTools.All(settings.WebSearch).Concat(mcp?.Tools ?? []));
 
     private sealed class LiveSession(SessionInfo info, List<ChatMessage> history, PermissionEngine permissions, ToolContext tools)
     {

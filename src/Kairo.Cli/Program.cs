@@ -67,10 +67,11 @@ if (options.BaseUrl is { } url)
     else
         config.BaseUrl = url;
 }
+var secrets = new CredentialStore();
 IModelProvider provider;
 try
 {
-    provider = ProviderFactory.Create(config, new CredentialStore());
+    provider = ProviderFactory.Create(config, secrets);
 }
 catch (ProviderSetupException ex)
 {
@@ -118,7 +119,7 @@ if (!options.NoMcp)
 var instructions = SystemPrompt.FindInstructionFiles(cwd, userConfigDir);
 var agent = new Agent(
     provider,
-    new ToolRegistry(BuiltinTools.All().Concat(mcp.Tools)),
+    new ToolRegistry(BuiltinTools.All(() => ProviderFactory.WebSearchOf(config, secrets)).Concat(mcp.Tools)),
     new PermissionEngine(rules, mode),
     ui,
     new ToolContext(cwd),
