@@ -123,6 +123,47 @@ public sealed class AgentHost(
         var note = live.PendingNote;
         live.PendingNote = null;
 
+        var agent = MakeAgent(live, config, provider);
+        _ = Task.Run(() => RunTurnAsync(live, agent, text, note, turn, ProviderFactory.ProviderOf(config)));
+    }
+
+    /// <summary>
+    /// Replaces the model's view of the session with a summary (the user's /compact). The stored log keeps every message.
+    /// Runs in the background like a turn: the session is busy meanwhile and the user can stop it.
+    /// </summary>
+    public void Compact(string sessionId, string? focus)
+    {
+        var live = GetLive(sessionId);
+        var config = LoadConfig(live.Info.WorkingDirectory);
+
+        IModelProvider provider;
+        try
+        {
+            provider = _createProvider(config);
+        }
+        catch (ProviderSetupException ex)
+        {
+            throw new RpcException(RpcErrorCodes.InvalidRequest, Describe(ex));
+        }
+
+        CancellationTokenSource turn;
+        lock (live.Gate)
+        {
+            if (live.Turn is not null)
+                throw new RpcException(RpcErrorCodes.InvalidRequest, "Агент ещё работает в этой сессии. Дождитесь ответа или остановите его.");
+            if (Compaction.Effective(live.History).Count < 2)
+                throw new RpcException(RpcErrorCodes.InvalidRequest, "Сжимать пока нечего: в сессии почти нет истории.");
+            turn = live.Turn = new CancellationTokenSource();
+        }
+
+        var agent = MakeAgent(live, config, provider);
+        _ = Task.Run(() => RunCompactionAsync(live, agent, focus, turn, ProviderFactory.ProviderOf(config)));
+    }
+
+    private Agent MakeAgent(LiveSession live, KairoConfig config, IModelProvider provider)
+    {
+        var sessionId = live.Info.Id;
+        var cwd = live.Info.WorkingDirectory;
         var agent = new Agent(
             provider,
             Tools(),
@@ -130,8 +171,8 @@ public sealed class AgentHost(
             new Prompt(this, sessionId, live.Tools),
             live.Tools,
             SystemPrompt.Build(cwd, SystemPrompt.FindInstructionFiles(cwd, settings.UserConfigDirectory), DateTimeOffset.Now, live.Permissions.Mode),
-            new AgentOptions(ProviderFactory.ModelOf(config), config.Effort),
-            live.History);
+            new AgentOptions(ProviderFactory.ModelOf(config), config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
+            Compaction.Effective(live.History));
 
         agent.MessageAppended += message =>
         {
@@ -144,8 +185,7 @@ public sealed class AgentHost(
                 live.Info = live.Info with { Title = TitleFrom(first) };
             }
         };
-
-        _ = Task.Run(() => RunTurnAsync(live, agent, text, note, turn, ProviderFactory.ProviderOf(config)));
+        return agent;
     }
 
     public void Cancel(string sessionId)
@@ -245,6 +285,12 @@ public sealed class AgentHost(
                         input += m.Usage.InputTokens ?? 0;
                         output += m.Usage.OutputTokens ?? 0;
                         break;
+                    case ContextCompacting:
+                        await _notify(new AgentEventDto(id, "compacting")).ConfigureAwait(false);
+                        break;
+                    case ContextCompacted c:
+                        await _notify(new AgentEventDto(id, "compacted", Text: c.Summary, TokensBefore: c.TokensBefore, TokensAfter: c.TokensAfter)).ConfigureAwait(false);
+                        break;
                     case AgentFinished f:
                         reason = f.Reason;
                         break;
@@ -268,6 +314,39 @@ public sealed class AgentHost(
         }
 
         await _notify(new AgentEventDto(id, "turn_finished", Reason: reason, InputTokens: input, OutputTokens: output)).ConfigureAwait(false);
+        await sessionsChanged().ConfigureAwait(false);
+    }
+
+    private async Task RunCompactionAsync(LiveSession live, Agent agent, string? focus, CancellationTokenSource turn, string providerId)
+    {
+        var id = live.Info.Id;
+        var reason = "compacted";
+
+        await _notify(new AgentEventDto(id, "turn_started")).ConfigureAwait(false);
+        await _notify(new AgentEventDto(id, "compacting")).ConfigureAwait(false);
+        await sessionsChanged().ConfigureAwait(false);
+        try
+        {
+            var done = await agent.CompactAsync(focus, turn.Token).ConfigureAwait(false);
+            await _notify(new AgentEventDto(id, "compacted", Text: done.Summary, TokensBefore: done.TokensBefore, TokensAfter: done.TokensAfter)).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            reason = "cancelled";
+        }
+        catch (Exception ex)
+        {
+            reason = "error";
+            await _notify(new AgentEventDto(id, "error", Text: ErrorText.Describe(ex, providerId))).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (live.Gate)
+                live.Turn = null;
+            turn.Dispose();
+        }
+
+        await _notify(new AgentEventDto(id, "turn_finished", Reason: reason)).ConfigureAwait(false);
         await sessionsChanged().ConfigureAwait(false);
     }
 

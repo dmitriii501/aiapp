@@ -6,7 +6,7 @@ import { useStore } from "./store";
 import "./styles.css";
 
 // Mock-only demos for screenshots and UI work in a browser:
-// index.html#demo (waiting for approval), #demo-done (finished turn), #settings, #mcp.
+// index.html#demo (waiting for approval), #demo-done (finished turn), #demo-compact, #settings, #mcp.
 if (bridge.kind === "mock" && location.hash === "#mcp") {
   setTimeout(() => useStore.getState().setMcpOpen(true), 300);
 }
@@ -34,6 +34,19 @@ if (bridge.kind === "mock" && location.hash.startsWith("#demo")) {
         if (ask?.kind === "permission") void state.respond(ask.prompt.requestId, "allow");
         const prompt = chat?.items.find((i) => i.kind === "user");
         if (chat && !chat.running && prompt?.kind === "user" && prompt.checkpointId && !state.rollback) void state.openRollback(prompt.checkpointId);
+      });
+    }
+    if (location.hash === "#demo-compact") {
+      // Finish the turn, then compact: the divider with the token counts and a way to see the summary.
+      let compacted = false;
+      useStore.subscribe((state) => {
+        const chat = state.currentId ? state.chats[state.currentId] : undefined;
+        const ask = chat?.items.find((i) => i.kind === "permission");
+        if (ask?.kind === "permission") void state.respond(ask.prompt.requestId, "allow");
+        if (chat && !chat.running && !compacted && chat.items.some((i) => i.kind === "assistant")) {
+          compacted = true;
+          void state.compact();
+        }
       });
     }
     if (location.hash === "#demo-done") {

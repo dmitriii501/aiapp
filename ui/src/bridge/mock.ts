@@ -164,6 +164,19 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
     notify(Notifications.SessionsChanged, {});
   }
 
+  async function runCompact(id: string, s: { summary: SessionSummary; items: TranscriptItem[]; mode: Mode }) {
+    s.summary.running = true;
+    event({ sessionId: id, type: "turn_started" });
+    event({ sessionId: id, type: "compacting" });
+    await sleep(900);
+    const summary = "Запрос: заменить приветствие в Program.cs на «Hello, Kairo».\n\nФайлы: src/Program.cs — строка 3 изменена.\n\nТекущее состояние: правка сделана и проверена.\nСледующий шаг: ждать новой задачи.";
+    s.items = [{ kind: "compaction", text: summary }];
+    event({ sessionId: id, type: "compacted", text: summary, tokensBefore: 84000, tokensAfter: 1800 });
+    s.summary.running = false;
+    event({ sessionId: id, type: "turn_finished", reason: "compacted" });
+    notify(Notifications.SessionsChanged, {});
+  }
+
   function handle(m: RpcMessage): unknown {
     const p = (m.params ?? {}) as Record<string, string>;
     switch (m.method) {
@@ -197,6 +210,9 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       }
       case Methods.SessionSend:
         void runTurn(p.sessionId, p.text);
+        return { success: true };
+      case Methods.SessionCompact:
+        void runCompact(p.sessionId, sessions.get(p.sessionId)!);
         return { success: true };
       case Methods.SessionSetMode:
         sessions.get(p.sessionId)!.mode = p.mode as Mode;

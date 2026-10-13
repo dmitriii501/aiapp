@@ -25,6 +25,8 @@ public static class Methods
     public const string SessionSend = "session.send";
     public const string SessionCancel = "session.cancel";
     public const string SessionSetMode = "session.setMode";
+    /// <summary>Summarizes the session so far to free context (the user's /compact). Optional focus: what to keep in detail.</summary>
+    public const string SessionCompact = "session.compact";
 
     public const string PermissionRespond = "permission.respond";
 
@@ -136,7 +138,7 @@ public sealed record SessionCreateParams(string WorkingDirectory);
 
 public sealed record SessionRef(string SessionId);
 
-/// <summary>A row of the rendered conversation. Kind: user | assistant | tool | error.</summary>
+/// <summary>A row of the rendered conversation. Kind: user | assistant | tool | compaction | error. For "compaction", Text is the summary.</summary>
 public sealed record TranscriptItem(
     string Kind,
     string? Text = null,
@@ -159,6 +161,8 @@ public sealed record SessionDetail(
 
 public sealed record SessionSendParams(string SessionId, string Text);
 
+public sealed record SessionCompactParams(string SessionId, string? Focus = null);
+
 public sealed record SessionModeParams(string SessionId, string Mode);
 
 // ---- Permissions ----
@@ -176,7 +180,8 @@ public sealed record PermissionRespondParams(string RequestId, string Decision);
 
 /// <summary>
 /// One streamed event of a turn. Type: turn_started | text | tool_started | tool_finished | permission |
-/// permission_resolved | checkpoint | mode | error | turn_finished. For "mode", Text is the new permission mode. Only the fields relevant to the type are set.
+/// permission_resolved | checkpoint | mode | compacting | compacted | error | turn_finished. For "mode", Text is the new permission mode;
+/// for "compacted", Text is the summary and TokensBefore/TokensAfter are size estimates. Only the fields relevant to the type are set.
 /// </summary>
 public sealed record AgentEventDto(
     string SessionId,
@@ -195,7 +200,9 @@ public sealed record AgentEventDto(
     string? Diff = null,
     string? CheckpointId = null,
     int? Files = null,
-    string? Detail = null);
+    string? Detail = null,
+    long? TokensBefore = null,
+    long? TokensAfter = null);
 
 // ---- MCP ----
 

@@ -48,7 +48,7 @@
 - [x] Plan mode с утверждением плана (`ExitPlanMode`) и todo-список (`TodoWrite`)
 - [ ] Сабагенты
 - [ ] Хуки, скиллы, слэш-команды, память
-- [ ] Compaction
+- [x] Compaction (автоматически на 80% окна и по `/compact`; полный журнал сессии остаётся)
 - [ ] Web search / fetch
 - [ ] Песочница (AppContainer) для автономного режима
 

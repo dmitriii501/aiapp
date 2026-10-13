@@ -26,8 +26,12 @@ namespace Kairo.Core.Config;
 /// [anthropic]
 /// base_url = "https://my-gateway.example.com"   # optional, for Anthropic-format gateways
 ///
+/// [context]
+/// window = 200000                                # tokens; 0 turns automatic compaction off
+/// compact_at = 0.8                               # summarize long sessions at this share of the window
+///
 /// [update]
-/// check = false                                  # no automatic update checks
+/// check = false                                 # no automatic update checks
 /// </example>
 public sealed class KairoConfig
 {
@@ -45,6 +49,19 @@ public sealed class KairoConfig
 
     /// <summary>Overrides the update feed (<c>[update] url</c>): a GitHub repository, a web address or a folder. Read from the user's file only.</summary>
     public string? UpdateUrl { get; set; }
+
+    public const int DefaultContextWindow = 128_000;
+    public const double DefaultCompactAt = 0.8;
+
+    /// <summary>Size of the model's context in tokens (<c>[context] window</c>); 0 turns automatic compaction off.</summary>
+    public int? ContextWindow { get; set; }
+
+    /// <summary>Share of the window at which long sessions are summarized (<c>[context] compact_at</c>, 0.3 to 0.95).</summary>
+    public double? CompactAt { get; set; }
+
+    public int EffectiveContextWindow => ContextWindow ?? DefaultContextWindow;
+    public double EffectiveCompactAt => CompactAt ?? DefaultCompactAt;
+
     public PermissionMode? Mode { get; set; }
     public List<string> Allow { get; } = [];
     public List<string> Ask { get; } = [];
@@ -148,6 +165,18 @@ public sealed class KairoConfig
 
         if (table.TryGetValue("anthropic", out var a) && a is TomlTable anthropic)
             AnthropicBaseUrl = String(anthropic, "base_url") ?? AnthropicBaseUrl;
+
+        if (table.TryGetValue("context", out var c) && c is TomlTable context)
+        {
+            if (context.TryGetValue("window", out var window) && window is long tokens)
+                ContextWindow = (int)Math.Clamp(tokens, 0, int.MaxValue);
+            if (context.TryGetValue("compact_at", out var at))
+            {
+                var share = at switch { double d => d, long l => l, _ => (double?)null };
+                if (share is { } s)
+                    CompactAt = Math.Clamp(s, 0.3, 0.95);
+            }
+        }
 
         if (table.TryGetValue("update", out var u) && u is TomlTable update)
         {

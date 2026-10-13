@@ -24,6 +24,7 @@ export type Item =
   | { id: string; kind: "tool"; toolCallId: string; tool: string; summary: string; output?: string; diff?: string; detail?: string; status: ToolStatus | "waiting" }
   | { id: string; kind: "permission"; prompt: PermissionPrompt }
   | { id: string; kind: "error"; text: string }
+  | { id: string; kind: "compaction"; pending: boolean; summary?: string; before?: number; after?: number }
   | { id: string; kind: "notice"; text: string };
 
 export interface Chat {
@@ -76,6 +77,8 @@ interface State {
   startSession(path: string): Promise<void>;
   pickFolder(): Promise<void>;
   send(text: string): Promise<void>;
+  /** Summarizes the session so far to free context (the /compact command). */
+  compact(focus?: string): Promise<void>;
   cancel(): Promise<void>;
   setMode(mode: Mode): Promise<void>;
   cycleMode(): Promise<void>;
@@ -165,12 +168,25 @@ export const useStore = create<State>((set, get) => {
               .filter((i) => !(i.kind === "permission" && i.prompt.requestId === e.requestId))
               .map((i) => (i.kind === "tool" && i.status === "waiting" ? { ...i, status: "running" as const } : i)),
           };
+        case "compacting":
+          endStreaming();
+          items.push({ id: nextId(), kind: "compaction", pending: true });
+          return { ...chat, items };
+        case "compacted": {
+          const at = items.findLastIndex((i) => i.kind === "compaction" && i.pending);
+          const done = { kind: "compaction" as const, pending: false, summary: e.text, before: e.tokensBefore, after: e.tokensAfter };
+          if (at >= 0) items[at] = { ...done, id: (items[at] as { id: string }).id };
+          else items.push({ ...done, id: nextId() });
+          return { ...chat, items };
+        }
         case "error":
           endStreaming();
           items.push({ id: nextId(), kind: "error", text: e.text ?? "Неизвестная ошибка" });
           return { ...chat, items };
         case "turn_finished":
           endStreaming();
+          // A compaction that failed or was stopped leaves no summary behind.
+          for (let n = items.length - 1; n >= 0; n--) if (items[n].kind === "compaction" && (items[n] as { pending: boolean }).pending) items.splice(n, 1);
           if (e.reason === "cancelled") items.push({ id: nextId(), kind: "notice", text: "Остановлено" });
           if (e.reason === "max_model_calls") items.push({ id: nextId(), kind: "notice", text: "Достигнут лимит шагов. Напишите «продолжай», чтобы агент продолжил." });
           if (e.reason === "refusal") items.push({ id: nextId(), kind: "notice", text: "Модель отказалась выполнять запрос." });
@@ -228,6 +244,8 @@ export const useStore = create<State>((set, get) => {
               return { id: nextId(), kind: "user", text: t.text ?? "", checkpointId: t.checkpointId, files: t.files };
             case "assistant":
               return { id: nextId(), kind: "assistant", text: t.text ?? "", streaming: false };
+            case "compaction":
+              return { id: nextId(), kind: "compaction", pending: false, summary: t.text };
             case "tool":
               return { id: nextId(), kind: "tool", toolCallId: t.toolCallId!, tool: t.tool!, summary: t.summary ?? t.tool!, output: t.output, diff: t.diff, detail: t.detail, status: t.status ?? "done" };
             default:
@@ -270,9 +288,23 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
+    async compact(focus) {
+      const id = get().currentId;
+      if (!id) return;
+      patchChat(id, (chat) => ({ ...chat, running: true, startedAt: Date.now() }));
+      try {
+        await bridge.call(Methods.SessionCompact, { sessionId: id, focus: focus || undefined });
+      } catch (e) {
+        patchChat(id, (chat) => ({ ...chat, running: false, startedAt: undefined }));
+        fail(e);
+      }
+    },
+
     async send(text) {
       const id = get().currentId;
       if (!id) return;
+      const command = text.trim().match(/^\/compact(?:\s+([\s\S]*))?$/);
+      if (command) return get().compact(command[1]?.trim());
       patchChat(id, (chat) => ({ ...chat, running: true, startedAt: Date.now(), items: [...chat.items, { id: nextId(), kind: "user", text }] }));
       try {
         await bridge.call(Methods.SessionSend, { sessionId: id, text });

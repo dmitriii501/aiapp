@@ -52,6 +52,11 @@ public static class HostMethods
             host.Send(p.SessionId, p.Text);
             return Task.FromResult(new Ok());
         });
+        rpc.Register(Methods.SessionCompact, ctx.SessionCompactParams, ctx.Ok, (p, _) =>
+        {
+            host.Compact(p.SessionId, p.Focus);
+            return Task.FromResult(new Ok());
+        });
         rpc.Register(Methods.SessionCancel, ctx.SessionRef, ctx.Ok, (p, _) =>
         {
             host.Cancel(p.SessionId);

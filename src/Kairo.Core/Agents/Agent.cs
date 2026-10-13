@@ -20,6 +20,12 @@ public sealed record ModelCallCompleted(string? StopReason, Usage Usage) : Agent
 /// <summary>The run is over: the model answered without tool calls, or a limit was hit.</summary>
 public sealed record AgentFinished(string Reason) : AgentEvent;
 
+/// <summary>The history is about to be replaced by a summary (a model call that takes a few seconds).</summary>
+public sealed record ContextCompacting : AgentEvent;
+
+/// <summary>The history was replaced by a summary. Sizes are estimates in tokens.</summary>
+public sealed record ContextCompacted(long TokensBefore, long TokensAfter, string Summary) : AgentEvent;
+
 public enum PermissionAnswer { Allow, AllowAlways, Deny }
 
 public sealed record PermissionRequest(string Tool, ToolAssessment Call, string Reason, string? Diff = null);
@@ -30,7 +36,9 @@ public interface IPermissionPrompt
     Task<PermissionAnswer> AskAsync(PermissionRequest request, CancellationToken ct);
 }
 
-public sealed record AgentOptions(string Model, string? Effort = null, int MaxModelCalls = 60);
+/// <param name="ContextWindow">Size of the model's context in tokens; 0 turns automatic compaction off.</param>
+/// <param name="CompactAt">Share of the window at which the history is summarized.</param>
+public sealed record AgentOptions(string Model, string? Effort = null, int MaxModelCalls = 60, int ContextWindow = 0, double CompactAt = 0.8);
 
 public sealed class ToolRegistry
 {
@@ -64,6 +72,12 @@ public sealed class Agent(
 {
     private readonly List<ChatMessage> _history = [.. history ?? []];
 
+    /// <summary>Context size reported by the model's last call (tokens): a better guide than the estimate.</summary>
+    private long _lastContextTokens;
+
+    /// <summary>Automatic compactions per run: a window too small for even one round must not loop.</summary>
+    private const int MaxAutoCompactionsPerRun = 2;
+
     public IReadOnlyList<ChatMessage> History => _history;
 
     /// <summary>Raised for every message added to the history, e.g. to persist the session.</summary>
@@ -72,12 +86,28 @@ public sealed class Agent(
     /// <param name="note">Context from Kairo (not from the user), sent with the prompt and hidden in the transcript.</param>
     public async IAsyncEnumerable<AgentEvent> RunAsync(string userText, string? note = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
+        var compactions = 0;
+        if (ShouldCompact(compactions))
+        {
+            compactions++;
+            yield return new ContextCompacting();
+            yield return await CompactAsync(null, ct).ConfigureAwait(false);
+        }
+
         Append(note is { Length: > 0 }
             ? new ChatMessage(ChatRole.User, [new TextPart(ChatMessage.NoteOpen + note + ChatMessage.NoteClose + "\n\n"), new TextPart(userText)])
             : ChatMessage.UserText(userText));
 
         for (var call = 0; call < options.MaxModelCalls; call++)
         {
+            // Long single turns (many tool calls) can fill the window too: summarize between model calls.
+            if (call > 0 && ShouldCompact(compactions))
+            {
+                compactions++;
+                yield return new ContextCompacting();
+                yield return await CompactAsync(null, ct).ConfigureAwait(false);
+            }
+
             ModelResponse? response = null;
             var request = new ModelRequest(options.Model, _history, systemPrompt, tools.Specs, Effort: options.Effort);
 
@@ -97,6 +127,7 @@ public sealed class Agent(
             if (response is null)
                 throw new ModelProviderException("The model stream ended without a response.");
 
+            _lastContextTokens = (response.Usage.InputTokens ?? 0) + (response.Usage.CacheReadTokens ?? 0);
             Append(response.Message);
             yield return new ModelCallCompleted(response.StopReason, response.Usage);
 
@@ -146,6 +177,24 @@ public sealed class Agent(
         }
 
         yield return new AgentFinished("max_model_calls");
+    }
+
+    private bool ShouldCompact(int doneThisRun) =>
+        options.ContextWindow > 0 && doneThisRun < MaxAutoCompactionsPerRun && _history.Count > 1
+        && Math.Max(_lastContextTokens, Compaction.EstimateTokens(_history, systemPrompt)) >= options.ContextWindow * options.CompactAt;
+
+    /// <summary>
+    /// Replaces the history with a model-written summary (the stored log keeps everything; see <see cref="Compaction"/>).
+    /// Never call it while a turn is running.
+    /// </summary>
+    public async Task<ContextCompacted> CompactAsync(string? focus, CancellationToken ct = default)
+    {
+        var before = Compaction.EstimateTokens(_history, systemPrompt);
+        var summary = await Compaction.SummarizeAsync(provider, options.Model, _history, focus, ct).ConfigureAwait(false);
+        _history.Clear();
+        Append(summary);
+        _lastContextTokens = 0;
+        return new ContextCompacted(before, Compaction.EstimateTokens(_history, systemPrompt), Compaction.SummaryText(summary));
     }
 
     private sealed record Prepared(string Summary, ITool? Tool = null, ToolAssessment? Assessment = null, ToolResult? Error = null);

@@ -749,6 +749,30 @@ select.input {
   font-style: italic;
 }
 
+.entry--compaction {
+  display: block;
+  margin: 6px 0;
+  padding: 4px 0 4px 18px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.compaction__line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compaction__summary {
+  margin: 6px 0 2px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: var(--mono-size) / 18px var(--font-mono);
+  color: var(--text);
+}
+
 .tool-call {
   font: var(--mono-size) / 20px var(--font-mono);
   overflow-wrap: anywhere;

@@ -42,12 +42,37 @@ const Row = memo(function Row({ item }: { item: Item }) {
           <div className="entry__body">{item.text}</div>
         </div>
       );
+    case "compaction":
+      return <CompactionEntry {...item} />;
     case "notice":
       return <div className="entry entry--notice">{item.text}</div>;
     default:
       return null;
   }
 });
+
+const tokens = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
+/** A divider where the conversation was replaced by a summary; the summary itself is one click away. */
+function CompactionEntry({ pending, summary, before, after }: { pending: boolean; summary?: string; before?: number; after?: number }) {
+  const [open, setOpen] = useState(false);
+  if (pending) return <div className="entry entry--compaction">Сжимаю контекст…</div>;
+  return (
+    <div className="entry entry--compaction">
+      <div className="compaction__line">
+        <span>
+          Контекст сжат{before && after ? ` · ~${tokens(before)} → ~${tokens(after)} токенов` : ""}
+        </span>
+        {summary ? (
+          <button className="entry__rollback" onClick={() => setOpen(!open)}>
+            {open ? "Скрыть сводку" : "Сводка"}
+          </button>
+        ) : null}
+      </div>
+      {open && summary ? <pre className="compaction__summary">{summary}</pre> : null}
+    </div>
+  );
+}
 
 function filesWord(n: number) {
   const mod10 = n % 10;

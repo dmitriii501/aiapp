@@ -24,6 +24,12 @@ public static class Transcript
 
         foreach (var message in history)
         {
+            if (message.IsSummary)
+            {
+                items.Add(new TranscriptItem("compaction", Text: Compaction.SummaryText(message)));
+                continue;
+            }
+
             if (message.Role == ChatRole.User)
             {
                 foreach (var result in message.Parts.OfType<ToolResultPart>())

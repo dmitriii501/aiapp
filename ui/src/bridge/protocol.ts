@@ -13,6 +13,7 @@ export const Methods = {
   SessionSend: "session.send",
   SessionCancel: "session.cancel",
   SessionSetMode: "session.setMode",
+  SessionCompact: "session.compact",
   PermissionRespond: "permission.respond",
   McpList: "mcp.list",
   McpAdd: "mcp.add",
@@ -95,7 +96,7 @@ export interface SessionSummary {
 }
 
 export interface TranscriptItem {
-  kind: "user" | "assistant" | "tool" | "error";
+  kind: "user" | "assistant" | "tool" | "compaction" | "error";
   text?: string;
   toolCallId?: string;
   tool?: string;
@@ -141,6 +142,8 @@ export type AgentEventType =
   | "permission_resolved"
   | "checkpoint"
   | "mode"
+  | "compacting"
+  | "compacted"
   | "error"
   | "turn_finished";
 
@@ -162,6 +165,9 @@ export interface AgentEvent {
   checkpointId?: string;
   files?: number;
   detail?: string;
+  /** On "compacted": estimated size of the conversation before and after, in tokens. */
+  tokensBefore?: number;
+  tokensAfter?: number;
 }
 
 export type RollbackAction = "restore" | "delete" | "conflict" | "unchanged" | "unavailable";
@@ -236,6 +242,7 @@ export interface MethodMap {
   [Methods.SessionSend]: { params: { sessionId: string; text: string }; result: Ok };
   [Methods.SessionCancel]: { params: { sessionId: string }; result: Ok };
   [Methods.SessionSetMode]: { params: { sessionId: string; mode: Mode }; result: Ok };
+  [Methods.SessionCompact]: { params: { sessionId: string; focus?: string }; result: Ok };
   [Methods.PermissionRespond]: { params: { requestId: string; decision: Decision }; result: Ok };
   [Methods.McpList]: { params: NoParams; result: McpListResult };
   [Methods.McpAdd]: { params: { name: string; command?: string; url?: string }; result: McpListResult };

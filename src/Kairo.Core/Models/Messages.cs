@@ -16,13 +16,21 @@ public sealed record ChatMessage(ChatRole Role, IReadOnlyList<MessagePart> Parts
     public const string NoteOpen = "<kairo-note>";
     public const string NoteClose = "</kairo-note>";
 
+    /// <summary>Marks the message that replaces the earlier conversation after compaction (see <c>Compaction</c>).</summary>
+    public const string SummaryOpen = "<kairo-summary>";
+    public const string SummaryClose = "</kairo-summary>";
+
+    [JsonIgnore]
+    public bool IsSummary => Role == ChatRole.User && Parts.Count == 1 && Parts[0] is TextPart t && t.Text.StartsWith(SummaryOpen, StringComparison.Ordinal);
+
     [JsonIgnore]
     public string Text => string.Concat(Parts.OfType<TextPart>().Select(p => p.Text));
 
     /// <summary>What the user typed: the text without notes that Kairo added for the model.</summary>
     [JsonIgnore]
     public string UserTypedText => string.Concat(Parts.OfType<TextPart>()
-        .Where(p => !p.Text.StartsWith(NoteOpen, StringComparison.Ordinal)).Select(p => p.Text));
+        .Where(p => !p.Text.StartsWith(NoteOpen, StringComparison.Ordinal) && !p.Text.StartsWith(SummaryOpen, StringComparison.Ordinal))
+        .Select(p => p.Text));
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]

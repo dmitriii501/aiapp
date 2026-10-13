@@ -43,6 +43,15 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
                     _cacheRead += m.Usage.CacheReadTokens ?? 0;
                     break;
 
+                case ContextCompacting:
+                    EndLine();
+                    Write(ConsoleColor.DarkGray, "  compacting the conversation…\n");
+                    break;
+
+                case ContextCompacted c:
+                    Write(ConsoleColor.DarkGray, $"  compacted: ~{c.TokensBefore:N0} → ~{c.TokensAfter:N0} tokens\n");
+                    break;
+
                 case AgentFinished f:
                     EndLine();
                     if (f.Reason is not ("end_turn" or "stop" or "tool_use"))

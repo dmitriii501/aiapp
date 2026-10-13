@@ -123,8 +123,8 @@ var agent = new Agent(
     ui,
     new ToolContext(cwd),
     SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now, mode),
-    new AgentOptions(model, options.Effort ?? config.Effort),
-    history);
+    new AgentOptions(model, options.Effort ?? config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
+    Compaction.Effective(history));
 
 // Persist every message; repaired messages that were not stored yet are saved too.
 var persisted = session is null ? 0 : store.LoadMessages(session.Id).Count;
@@ -146,7 +146,7 @@ if (instructions.Count > 0)
     ConsoleUi.Write(ConsoleColor.DarkGray, $"  instructions: {string.Join(", ", instructions.Select(i => Path.GetFileName(Path.GetDirectoryName(i.Path)) + "/" + Path.GetFileName(i.Path)))}\n");
 if (session is not null)
     ConsoleUi.Write(ConsoleColor.DarkGray, $"  resumed session {session.Id} ({history.Count} messages)\n");
-ConsoleUi.Write(ConsoleColor.DarkGray, "  /exit to quit, /session for the session id, Ctrl+C to interrupt\n\n");
+ConsoleUi.Write(ConsoleColor.DarkGray, "  /exit to quit, /session for the session id, /compact [focus] to free context, Ctrl+C to interrupt\n\n");
 
 CancellationTokenSource? turn = null;
 Console.CancelKeyPress += (_, e) =>
@@ -171,6 +171,14 @@ while (true)
     }
     if (string.IsNullOrWhiteSpace(line))
         continue;
+    if (line.Trim() == "/compact" || line.TrimStart().StartsWith("/compact ", StringComparison.Ordinal))
+    {
+        turn = new CancellationTokenSource();
+        await CompactAsync(line.Trim()["/compact".Length..].Trim(), turn.Token);
+        turn.Dispose();
+        turn = null;
+        continue;
+    }
 
     turn = new CancellationTokenSource();
     await RunTurnAsync(line, turn.Token);
@@ -179,6 +187,28 @@ while (true)
     Console.WriteLine();
 }
 return 0;
+
+async Task CompactAsync(string focus, CancellationToken ct)
+{
+    if (Compaction.Effective(agent.History).Count < 2)
+    {
+        ConsoleUi.Write(ConsoleColor.DarkGray, "  nothing to compact yet\n");
+        return;
+    }
+    try
+    {
+        ui.Render(new ContextCompacting());
+        ui.Render(await agent.CompactAsync(focus.Length > 0 ? focus : null, ct));
+    }
+    catch (OperationCanceledException)
+    {
+        ConsoleUi.Write(ConsoleColor.Yellow, "\n[interrupted]\n");
+    }
+    catch (Exception ex) when (ex is ModelProviderException or HttpRequestException || ex.GetType().Namespace?.StartsWith("Anthropic", StringComparison.Ordinal) == true)
+    {
+        ConsoleUi.Write(ConsoleColor.Red, $"\nerror: {ex.Message}\n");
+    }
+}
 
 async Task<bool> RunTurnAsync(string text, CancellationToken ct)
 {
