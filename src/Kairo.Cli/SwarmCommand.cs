@@ -34,7 +34,20 @@ internal static class SwarmCommand
             PrintStatus(store, info);
             return 0;
         }
-        return Fail("Usage: kairo swarm \"<goal>\" | list | status <id> | resume <id>");
+        if (sub == "clean" && options.Positional.Count > 1)
+        {
+            try
+            {
+                foreach (var line in SwarmCleaner.CleanAsync(store, options.Positional[1]).GetAwaiter().GetResult())
+                    Console.WriteLine(line);
+                return 0;
+            }
+            catch (SwarmException ex)
+            {
+                return Fail(ex.Message);
+            }
+        }
+        return Fail("Usage: kairo swarm \"<goal>\" | list | status <id> | resume <id> | clean <id>");
     }
 
     public static async Task<int> RunAsync(
@@ -126,6 +139,7 @@ internal static class SwarmCommand
     private static void PrintStatus(SwarmStore store, SwarmInfo info)
     {
         Console.WriteLine($"\nSwarm {info.Id} [{info.Status}] — {info.Goal}");
+        Console.WriteLine($"  {info.TokensUsed:N0} tokens over {info.ModelCalls} model calls (limit {info.Limits.MaxTokens:N0})");
         foreach (var a in store.Agents(info.Id))
             Console.WriteLine($"  {a.Name,-10} {a.Status,-8} {(a.Branch is null ? a.WorkingDirectory : a.Branch)}");
         Console.WriteLine("Board:");

@@ -327,6 +327,53 @@ public class SwarmTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleaning_removes_worktrees_and_merged_branches_but_keeps_unmerged_work()
+    {
+        await InitRepoAsync();
+        var swarm = NewSwarm();
+        await NewRunner(new SwarmModel(Team)).RunAsync(swarm.Id, default);
+        var coder2 = _store.Agents(swarm.Id).Single(a => a.Name == "coder-2");
+        // Work that was never merged must survive the cleaning.
+        File.WriteAllText(Path.Combine(coder2.WorkingDirectory, "extra.txt"), "unmerged\n");
+        await GitWorkspace.CommitAllAsync(coder2.WorkingDirectory, "unmerged work");
+
+        var report = await SwarmCleaner.CleanAsync(_store, swarm.Id);
+
+        Assert.Contains(report, l => l.StartsWith("coder-1:", StringComparison.Ordinal) && l.Contains("removed", StringComparison.Ordinal) && !l.Contains("kept", StringComparison.Ordinal));
+        Assert.Contains(report, l => l.StartsWith("coder-2:", StringComparison.Ordinal) && l.Contains("kept", StringComparison.Ordinal));
+        Assert.False(Directory.Exists(coder2.WorkingDirectory));
+        var (_, branches) = await GitWorkspace.RunAsync(_repo, ["branch", "--list", "kairo/*"]);
+        Assert.DoesNotContain("coder-1", branches);
+        Assert.Contains("coder-2", branches);
+    }
+
+    [Fact]
+    public async Task A_worker_cannot_write_outside_its_worktree_and_is_told_where_to_write()
+    {
+        await InitRepoAsync();
+        var outside = Path.Combine(_repo, "landing.html").Replace("\\", "\\\\");
+        var model = new SwarmModel((agent, request) =>
+        {
+            if (agent == "lead")
+                return Lead(agent, request);
+            // A worker that insists on the absolute path of the main folder, then gives up and uses the relative one.
+            var turn = SwarmModel.CurrentTurn(request);
+            if (turn.All(m => m.Role != ChatRole.Assistant))
+                return SwarmModel.Calls(("w0", "Write", $"{{\"file_path\":\"{outside}\",\"content\":\"x\"}}"));
+            return SwarmModel.Say("done");
+        });
+        var swarm = NewSwarm();
+
+        await NewRunner(model).RunAsync(swarm.Id, default);
+
+        Assert.False(File.Exists(Path.Combine(_repo, "landing.html")));
+        var refusal = model.Requests.Where(r => r.Agent.StartsWith("coder", StringComparison.Ordinal))
+            .SelectMany(r => r.Request.Messages).SelectMany(m => m.Parts).OfType<ToolResultPart>().FirstOrDefault(r => r.Content.Contains("outside your worktree", StringComparison.Ordinal));
+        Assert.NotNull(refusal);
+        Assert.True(refusal.IsError);
+    }
+
+    [Fact]
     public async Task A_merge_conflict_is_reported_and_leaves_the_main_folder_clean()
     {
         await InitRepoAsync();

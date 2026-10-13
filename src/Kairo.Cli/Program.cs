@@ -43,7 +43,7 @@ if (options.Command == "sessions")
     return 0;
 }
 
-if (options.Command == "swarm" && (options.Positional.FirstOrDefault() is "list" or "status" or null))
+if (options.Command == "swarm" && (options.Positional.FirstOrDefault() is "list" or "status" or "clean" or null))
     return SwarmCommand.Inspect(options);
 
 KairoConfig config;

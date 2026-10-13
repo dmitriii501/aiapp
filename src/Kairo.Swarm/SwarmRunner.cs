@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text;
 using Kairo.Core.Agents;
 using Kairo.Core.Context;
@@ -81,6 +82,28 @@ public sealed class SwarmRunner(SwarmStore store, SessionStore sessions, IModelP
     }
 
     private enum Work { None, LeadStart, LeadResume, LeadWake, LeadFinishReminder, WorkerStart, WorkerInbox, WorkerContinue, WorkerTake }
+
+    /// <summary>Refuses file changes outside the agent's own folder, with a message that tells the model what to do instead.</summary>
+    private sealed class ConfinedTool(ITool inner) : ITool
+    {
+        public ToolSpec Spec => inner.Spec;
+
+        public ToolAssessment Assess(JsonElement input, ToolContext ctx)
+        {
+            var assessment = inner.Assess(input, ctx);
+            if (assessment.Risk >= RiskLevel.Write && !ctx.IsInsideWorkspace(assessment.Subject))
+            {
+                throw new ToolInputException(
+                    $"{assessment.Subject} is outside your worktree ({ctx.WorkingDirectory}). Change files only inside it, with paths relative to it. "
+                    + "Your changes reach the main folder when the lead merges your branch.");
+            }
+            return assessment;
+        }
+
+        public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct) => inner.InvokeAsync(input, ctx, ct);
+
+        public string? Preview(JsonElement input, ToolContext ctx) => inner.Preview(input, ctx);
+    }
 
     private sealed class Signal
     {
@@ -218,7 +241,10 @@ public sealed class SwarmRunner(SwarmStore store, SessionStore sessions, IModelP
         var ctx = new ToolContext(info.WorkingDirectory);
 
         var allowed = isLead ? LeadTools : WorkerTools;
-        var tools = setup.Tools().Where(t => allowed.Contains(t.Spec.Name) || (!isLead && t.Spec.Name.StartsWith("mcp__", StringComparison.Ordinal))).ToList();
+        var tools = setup.Tools().Where(t => allowed.Contains(t.Spec.Name) || (!isLead && t.Spec.Name.StartsWith("mcp__", StringComparison.Ordinal)))
+            // A worker changes files only in its own worktree; everything else reaches the main folder through a merge the lead makes.
+            .Select(t => !isLead && t.Spec.Name is "Write" or "Edit" ? new ConfinedTool(t) : t)
+            .ToList();
         tools.AddRange(SwarmToolsFor(info));
 
         var rules = new PermissionRules();
@@ -286,7 +312,9 @@ public sealed class SwarmRunner(SwarmStore store, SessionStore sessions, IModelP
 
                 How to lead:
                 1. Look at the repository, then split the goal into small, self-contained tasks with task_create. Say in each description what to do, where, and how to tell it is done. Use depends_on when one task needs another.
+                   Name files by paths relative to the repository root, never by absolute paths: each worker has its own copy of the repository in another folder.
                 2. Start workers with spawn_agent. At most {_info.Limits.MaxAgents - 1} workers; start only as many as there is independent work for.
+                   A swarm costs many model calls. If the goal is one small deliverable (one file, one fix), one worker is enough; do not split it just to use more workers.
                 3. Stop calling tools to end your turn. You are woken when a worker finishes or fails a task, or writes to you. Workers cannot see your thoughts: tell them what they need in the task or with send_message.
                 4. Check finished work (read the files in the worker's worktree), then merge each worker's branch with merge_agent. If a merge conflicts, create a task for a worker to resolve it.
                 5. When the goal is met, or cannot be, call swarm_finish with a short report: what was done, what was merged, what is left.
@@ -299,7 +327,8 @@ public sealed class SwarmRunner(SwarmStore store, SessionStore sessions, IModelP
             sb.AppendLine($"""
                 <swarm id="{SwarmId}">
                 You are "{info.Name}", a worker in a swarm led by "{LeadName}". The swarm works on one goal: {_info.Goal}
-                Your own git worktree is {info.WorkingDirectory} on branch {info.Branch}. Work only there: do not touch other folders.
+                Your own git worktree is {info.WorkingDirectory} on branch {info.Branch}. Work only there: you cannot change files outside it.
+                Use paths relative to it. If a task or message names a path in the main folder, take the same relative path in your worktree.
 
                 How to work:
                 1. Use task_list to see the board. Take a task that is yours or free and unblocked with task_claim.

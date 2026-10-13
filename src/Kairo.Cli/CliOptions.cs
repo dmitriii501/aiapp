@@ -31,7 +31,7 @@ internal sealed class CliOptions
           kairo -r <id>              resume a session by id
           kairo sessions             list recent sessions
           kairo swarm "<goal>"       run a swarm: a lead and workers in git worktrees (see docs/specs/swarm.md)
-          kairo swarm list | status <id> | resume <id>
+          kairo swarm list | status <id> | resume <id> | clean <id>   (clean removes the workers' worktrees and merged branches)
 
         Options:
           --provider <id>            anthropic (default) | openai-compatible
