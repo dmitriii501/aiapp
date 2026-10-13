@@ -5,9 +5,9 @@ using Kairo.Protocol;
 namespace Kairo.Host;
 
 /// <summary>The UI's view of MCP servers: edits <c>mcp.json</c> on the user's request and reports connection state.</summary>
-public sealed class McpService(McpManager manager, McpConfigStore store, string? claudeDesktopConfig = null)
+public sealed class McpService(McpManager manager, McpConfigStore store, Func<IReadOnlyList<string>>? claudeDesktopConfigs = null)
 {
-    private readonly string _claudeDesktopConfig = claudeDesktopConfig ?? McpConfigStore.ClaudeDesktopPath;
+    private readonly Func<IReadOnlyList<string>> _claudeDesktopConfigs = claudeDesktopConfigs ?? McpConfigStore.ClaudeDesktopCandidates;
 
     /// <summary>A server connected, failed or was edited. May fire on any thread.</summary>
     public event Action? Changed
@@ -54,7 +54,14 @@ public sealed class McpService(McpManager manager, McpConfigStore store, string?
 
     public McpListResult ImportDesktop()
     {
-        var imported = Edit(() => store.ImportFrom(_claudeDesktopConfig));
+        var imported = Edit(() =>
+        {
+            var files = _claudeDesktopConfigs();
+            if (files.Count == 0)
+                throw new McpConfigException("Файл конфигурации Claude Desktop не найден. Если вы его не используете, добавьте серверы вручную.");
+            // Several files can exist (usual folder and the Store package); the first one that has a server wins.
+            return files.SelectMany(store.ImportFrom).ToList();
+        });
         if (imported.Count > 0)
             _ = manager.ReloadAsync();
         return List(imported);

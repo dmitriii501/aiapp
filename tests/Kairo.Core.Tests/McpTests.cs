@@ -254,6 +254,38 @@ public class McpTests : IAsyncLifetime
     }
 }
 
+public class McpImportTests : IDisposable
+{
+    private readonly TempDir _dir = new();
+
+    public void Dispose() => _dir.Dispose();
+
+    private string Write(string name, string json)
+    {
+        var path = Path.Combine(_dir.Path, name);
+        File.WriteAllText(path, json);
+        return path;
+    }
+
+    [Fact]
+    public async Task Import_reads_every_claude_desktop_config_and_reports_when_there_is_none()
+    {
+        var store = new McpConfigStore(Write("mcp.json", """{"mcpServers":{}}"""));
+        await using var manager = new McpManager(store, (_, _, _) => throw new FileNotFoundException("not started in this test"));
+        var usual = Write("usual.json", """{"mcpServers":{"a":{"command":"x"},"shared":{"command":"x"}}}""");
+        var packaged = Write("packaged.json", """{"mcpServers":{"b":{"command":"x"},"shared":{"command":"other"}}}""");
+
+        var result = new Kairo.Host.McpService(manager, store, () => [usual, packaged]).ImportDesktop();
+
+        Assert.Equal(["a", "shared", "b"], result.Imported);
+        Assert.Equal("x", store.Load()["shared"].Command); // the first file wins
+
+        var none = new Kairo.Host.McpService(manager, store, () => []);
+        var ex = Assert.Throws<Kairo.Core.Rpc.RpcException>(none.ImportDesktop);
+        Assert.Contains("не найден", ex.Message);
+    }
+}
+
 public class CommandResolverTests
 {
     [Fact]

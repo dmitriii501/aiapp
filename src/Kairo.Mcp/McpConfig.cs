@@ -51,6 +51,22 @@ public sealed partial class McpConfigStore(string path)
     public static string ClaudeDesktopPath =>
         System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Claude", "claude_desktop_config.json");
 
+    /// <summary>
+    /// Where Claude Desktop may keep its config: the usual roaming folder and, for the Microsoft Store (MSIX) build,
+    /// the package's own copy of it. Only files that exist are returned.
+    /// </summary>
+    public static IReadOnlyList<string> ClaudeDesktopCandidates()
+    {
+        var candidates = new List<string> { ClaudeDesktopPath };
+        var packages = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages");
+        if (Directory.Exists(packages))
+        {
+            foreach (var package in Directory.EnumerateDirectories(packages, "Claude_*"))
+                candidates.Add(System.IO.Path.Combine(package, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json"));
+        }
+        return candidates.Where(File.Exists).ToList();
+    }
+
     private readonly Lock _gate = new();
 
     public IReadOnlyDictionary<string, McpServerConfig> Load()
