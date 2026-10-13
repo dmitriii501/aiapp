@@ -35,7 +35,7 @@ public sealed class AgentHost(
     private readonly Func<KairoConfig, IModelProvider> _createProvider = createProvider ?? (c => ProviderFactory.Create(c, settings.Secrets));
 
     /// <summary>Built-in tools plus whatever MCP servers are connected right now.</summary>
-    private ToolRegistry Tools() => new(BuiltinTools.All(settings.WebSearch).Concat(mcp?.Tools ?? []));
+    private ToolRegistry Tools() => new(BuiltinTools.All(settings.WebSearch, userConfigDirectory: settings.UserConfigDirectory).Concat(mcp?.Tools ?? []));
 
     private sealed class LiveSession(SessionInfo info, List<ChatMessage> history, PermissionEngine permissions, ToolContext tools)
     {
@@ -88,7 +88,8 @@ public sealed class AgentHost(
     public void SetMode(string sessionId, string mode) =>
         GetLive(sessionId).Permissions.Mode = SettingsService.ParseMode(mode);
 
-    public void Send(string sessionId, string text)
+    /// <returns>True when a turn started; false when the text was a command Kairo ran itself (/help, /remember).</returns>
+    public bool Send(string sessionId, string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new RpcException(RpcErrorCodes.InvalidParams, "Пустое сообщение.");
@@ -96,6 +97,19 @@ public sealed class AgentHost(
         var live = GetLive(sessionId);
         var cwd = live.Info.WorkingDirectory;
         var config = LoadConfig(cwd);
+
+        // /command: built-ins run here; custom commands and skills become a hidden note that goes to the model with the typed text.
+        string? commandNote = null;
+        switch (SlashCommands.Resolve(text, cwd, settings.UserConfigDirectory))
+        {
+            case BuiltInCommand built:
+                return RunBuiltIn(sessionId, live, built);
+            case UnknownCommand unknown:
+                throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестная команда /{unknown.Name}. Список команд: /help.");
+            case PromptCommand prompt:
+                commandNote = prompt.Note;
+                break;
+        }
 
         IModelProvider provider;
         try
@@ -122,9 +136,40 @@ public sealed class AgentHost(
         live.Tools.History = recorder;
         var note = live.PendingNote;
         live.PendingNote = null;
+        if (commandNote is not null)
+            note = note is null ? commandNote : note + "\n\n" + commandNote;
 
         var agent = MakeAgent(live, config, provider);
         _ = Task.Run(() => RunTurnAsync(live, agent, text, note, turn, ProviderFactory.ProviderOf(config)));
+        return true;
+    }
+
+    private bool RunBuiltIn(string sessionId, LiveSession live, BuiltInCommand command)
+    {
+        void Say(string text) => _ = _notify(new AgentEventDto(sessionId, "notice", Text: text));
+
+        switch (command.Name)
+        {
+            case "help":
+                Say(SlashCommands.Help(live.Info.WorkingDirectory, settings.UserConfigDirectory));
+                return false;
+            case "compact":
+                Compact(sessionId, command.Arguments.Length > 0 ? command.Arguments : null);
+                return true;
+            case "remember" when command.Arguments.Length == 0:
+            {
+                var memory = Memory.Read(settings.UserConfigDirectory).Trim();
+                Say(memory.Length == 0
+                    ? $"Память пуста. Запишите заметку: /remember текст. Файл: {Memory.PathIn(settings.UserConfigDirectory)}"
+                    : $"{memory}\n\nФайл: {Memory.PathIn(settings.UserConfigDirectory)}");
+                return false;
+            }
+            case "remember":
+                Say(Memory.Append(settings.UserConfigDirectory, command.Arguments) ?? "Запомнил. Заметка попадёт в новые запросы всех сессий.");
+                return false;
+            default:
+                return false;
+        }
     }
 
     /// <summary>
@@ -170,7 +215,8 @@ public sealed class AgentHost(
             live.Permissions,
             new Prompt(this, sessionId, live.Tools),
             live.Tools,
-            SystemPrompt.Build(cwd, SystemPrompt.FindInstructionFiles(cwd, settings.UserConfigDirectory), DateTimeOffset.Now, live.Permissions.Mode),
+            SystemPrompt.Build(cwd, SystemPrompt.FindInstructionFiles(cwd, settings.UserConfigDirectory), DateTimeOffset.Now, live.Permissions.Mode,
+                SkillCatalog.Discover(cwd, settings.UserConfigDirectory)),
             new AgentOptions(ProviderFactory.ModelOf(config), config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
             Compaction.Effective(live.History))
         {

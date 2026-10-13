@@ -26,6 +26,7 @@ namespace Kairo.Protocol;
 [JsonSerializable(typeof(SessionDetail))]
 [JsonSerializable(typeof(SessionSendParams))]
 [JsonSerializable(typeof(SessionCompactParams))]
+[JsonSerializable(typeof(SendResult))]
 [JsonSerializable(typeof(SessionModeParams))]
 [JsonSerializable(typeof(PermissionRespondParams))]
 [JsonSerializable(typeof(AgentEventDto))]

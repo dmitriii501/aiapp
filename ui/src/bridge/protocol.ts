@@ -55,6 +55,11 @@ export interface AppInfo {
   host: string;
 }
 
+/** started is false when the text was a command Kairo ran itself (/help, /remember): no turn began. */
+export interface SendResult {
+  started: boolean;
+}
+
 export interface Ok {
   success: boolean;
 }
@@ -242,7 +247,7 @@ export interface MethodMap {
   [Methods.SessionList]: { params: NoParams; result: { sessions: SessionSummary[] } };
   [Methods.SessionCreate]: { params: { workingDirectory: string }; result: SessionSummary };
   [Methods.SessionOpen]: { params: { sessionId: string }; result: SessionDetail };
-  [Methods.SessionSend]: { params: { sessionId: string; text: string }; result: Ok };
+  [Methods.SessionSend]: { params: { sessionId: string; text: string }; result: SendResult };
   [Methods.SessionCancel]: { params: { sessionId: string }; result: Ok };
   [Methods.SessionSetMode]: { params: { sessionId: string; mode: Mode }; result: Ok };
   [Methods.SessionCompact]: { params: { sessionId: string; focus?: string }; result: Ok };

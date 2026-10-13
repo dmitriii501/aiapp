@@ -311,7 +311,8 @@ export const useStore = create<State>((set, get) => {
       if (command) return get().compact(command[1]?.trim());
       patchChat(id, (chat) => ({ ...chat, running: true, startedAt: Date.now(), items: [...chat.items, { id: nextId(), kind: "user", text }] }));
       try {
-        await bridge.call(Methods.SessionSend, { sessionId: id, text });
+        const { started } = await bridge.call(Methods.SessionSend, { sessionId: id, text });
+        if (!started) patchChat(id, (chat) => ({ ...chat, running: false, startedAt: undefined }));
       } catch (e) {
         patchChat(id, (chat) => ({ ...chat, running: false, startedAt: undefined, items: [...chat.items, { id: nextId(), kind: "error", text: errorMessage(e) }] }));
       }

@@ -162,6 +162,9 @@ public sealed record SessionDetail(
 
 public sealed record SessionSendParams(string SessionId, string Text);
 
+/// <summary>Started is false when the text was a command Kairo ran itself (/help, /remember) and no turn began.</summary>
+public sealed record SendResult(bool Started);
+
 public sealed record SessionCompactParams(string SessionId, string? Focus = null);
 
 public sealed record SessionModeParams(string SessionId, string Mode);

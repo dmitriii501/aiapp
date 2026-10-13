@@ -14,7 +14,8 @@ public static class SystemPrompt
 
     private const int MaxInstructionFileChars = 40_000;
 
-    public static string Build(string workingDirectory, IReadOnlyList<InstructionFile> instructions, DateTimeOffset now, PermissionMode mode = PermissionMode.Default)
+    public static string Build(string workingDirectory, IReadOnlyList<InstructionFile> instructions, DateTimeOffset now, PermissionMode mode = PermissionMode.Default,
+        IReadOnlyList<Skill>? skills = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("""
@@ -58,6 +59,12 @@ public static class SystemPrompt
         sb.AppendLine($"Date: {now:yyyy-MM-dd}");
         sb.AppendLine("</environment>");
 
+        if (SkillCatalog.Describe(skills ?? []) is { Length: > 0 } skillList)
+        {
+            sb.AppendLine();
+            sb.Append(skillList);
+        }
+
         foreach (var file in instructions)
         {
             sb.AppendLine();
@@ -79,7 +86,13 @@ public static class SystemPrompt
         var result = new List<InstructionFile>();
 
         if (userConfigDirectory is not null)
+        {
             AddFrom(userConfigDirectory, result);
+            // What the user asked Kairo to remember (/remember) applies to every project.
+            var memory = Memory.PathIn(userConfigDirectory);
+            if (File.Exists(memory) && File.ReadAllText(memory).Trim().Length > 0)
+                result.Add(new InstructionFile(memory, File.ReadAllText(memory)));
+        }
 
         var chain = new Stack<string>();
         for (var dir = new DirectoryInfo(Path.GetFullPath(workingDirectory)); dir is not null; dir = dir.Parent)

@@ -213,8 +213,12 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
         return { session: s.summary, items: s.items, mode: s.mode, model: settings.model, pendingPermissions: [] };
       }
       case Methods.SessionSend:
+        if (p.text.trim() === "/help") {
+          event({ sessionId: p.sessionId, type: "notice", text: "Команды:\n  /help — список команд и скиллов\n  /compact — сжать контекст сессии\n  /remember — записать заметку в память Kairo\nСкиллы (вызываются по имени или сами):\n  review — проверка изменений перед коммитом" });
+          return { started: false };
+        }
         void runTurn(p.sessionId, p.text);
-        return { success: true };
+        return { started: true };
       case Methods.SessionCompact:
         void runCompact(p.sessionId, sessions.get(p.sessionId)!);
         return { success: true };

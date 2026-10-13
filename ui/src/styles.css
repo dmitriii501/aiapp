@@ -744,6 +744,7 @@ select.input {
 
 .entry--notice {
   display: block;
+  white-space: pre-wrap;
   padding-left: 18px;
   color: var(--muted);
   font-style: italic;

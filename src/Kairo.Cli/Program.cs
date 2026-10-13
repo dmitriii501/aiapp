@@ -119,11 +119,11 @@ if (!options.NoMcp)
 var instructions = SystemPrompt.FindInstructionFiles(cwd, userConfigDir);
 var agent = new Agent(
     provider,
-    new ToolRegistry(BuiltinTools.All(() => ProviderFactory.WebSearchOf(config, secrets)).Concat(mcp.Tools)),
+    new ToolRegistry(BuiltinTools.All(() => ProviderFactory.WebSearchOf(config, secrets), userConfigDirectory: userConfigDir).Concat(mcp.Tools)),
     new PermissionEngine(rules, mode),
     ui,
     new ToolContext(cwd),
-    SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now, mode),
+    SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now, mode, SkillCatalog.Discover(cwd, userConfigDir)),
     new AgentOptions(model, options.Effort ?? config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
     Compaction.Effective(history))
 {
@@ -150,7 +150,7 @@ if (instructions.Count > 0)
     ConsoleUi.Write(ConsoleColor.DarkGray, $"  instructions: {string.Join(", ", instructions.Select(i => Path.GetFileName(Path.GetDirectoryName(i.Path)) + "/" + Path.GetFileName(i.Path)))}\n");
 if (session is not null)
     ConsoleUi.Write(ConsoleColor.DarkGray, $"  resumed session {session.Id} ({history.Count} messages)\n");
-ConsoleUi.Write(ConsoleColor.DarkGray, "  /exit to quit, /session for the session id, /compact [focus] to free context, Ctrl+C to interrupt\n\n");
+ConsoleUi.Write(ConsoleColor.DarkGray, "  /exit to quit, /session for the session id, /help for commands, /compact [focus] to free context, Ctrl+C to interrupt\n\n");
 
 CancellationTokenSource? turn = null;
 Console.CancelKeyPress += (_, e) =>
@@ -175,17 +175,33 @@ while (true)
     }
     if (string.IsNullOrWhiteSpace(line))
         continue;
-    if (line.Trim() == "/compact" || line.TrimStart().StartsWith("/compact ", StringComparison.Ordinal))
+    string? note = null;
+    switch (SlashCommands.Resolve(line, cwd, userConfigDir))
     {
-        turn = new CancellationTokenSource();
-        await CompactAsync(line.Trim()["/compact".Length..].Trim(), turn.Token);
-        turn.Dispose();
-        turn = null;
-        continue;
+        case BuiltInCommand { Name: "help" }:
+            Console.WriteLine(SlashCommands.Help(cwd, userConfigDir));
+            continue;
+        case BuiltInCommand { Name: "remember" } remember:
+            Console.WriteLine(remember.Arguments.Length == 0
+                ? (Memory.Read(userConfigDir).Trim() is { Length: > 0 } saved ? saved : "memory is empty") + $"\n({Memory.PathIn(userConfigDir)})"
+                : Memory.Append(userConfigDir, remember.Arguments) ?? "remembered");
+            continue;
+        case BuiltInCommand { Name: "compact" } compact:
+            turn = new CancellationTokenSource();
+            await CompactAsync(compact.Arguments, turn.Token);
+            turn.Dispose();
+            turn = null;
+            continue;
+        case UnknownCommand unknown:
+            Console.WriteLine($"Unknown command /{unknown.Name}. Try /help.");
+            continue;
+        case PromptCommand command:
+            note = command.Note;
+            break;
     }
 
     turn = new CancellationTokenSource();
-    await RunTurnAsync(line, turn.Token);
+    await RunTurnAsync(line, turn.Token, note);
     turn.Dispose();
     turn = null;
     Console.WriteLine();
@@ -214,11 +230,11 @@ async Task CompactAsync(string focus, CancellationToken ct)
     }
 }
 
-async Task<bool> RunTurnAsync(string text, CancellationToken ct)
+async Task<bool> RunTurnAsync(string text, CancellationToken ct, string? note = null)
 {
     try
     {
-        await foreach (var ev in agent.RunAsync(text, ct: ct))
+        await foreach (var ev in agent.RunAsync(text, note, ct))
             ui.Render(ev);
         ui.PrintUsage(model);
         return true;
