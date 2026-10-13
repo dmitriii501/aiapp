@@ -97,6 +97,8 @@ public sealed class WriteTool : ITool
         var path = ctx.ResolvePath(ToolInput.RequiredString(input, "file_path"));
         var content = ToolInput.RequiredString(input, "content");
 
+        if (ctx.SandboxDenial(path) is { } denied)
+            return ToolResult.Error(denied);
         if (File.Exists(path) && !ctx.ReadFiles.Contains(path))
             return ToolResult.Error($"{path} already exists and has not been read in this session. Read it first.");
 
@@ -149,6 +151,8 @@ public sealed class EditTool : ITool
         var oldString = ToolInput.RequiredString(input, "old_string");
         var newString = ToolInput.RequiredString(input, "new_string");
         var replaceAll = ToolInput.OptionalBool(input, "replace_all");
+        if (ctx.SandboxDenial(path) is { } denied)
+            return ToolResult.Error(denied);
 
         if (!File.Exists(path))
             return ToolResult.Error($"File not found: {path}");

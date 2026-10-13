@@ -24,7 +24,8 @@ public sealed class SwarmService(
     SettingsService settings,
     Func<SwarmDetail, Task> notify,
     Func<KairoConfig, IModelProvider>? createProvider = null,
-    McpManager? mcp = null)
+    McpManager? mcp = null,
+    ISandboxProvider? sandboxes = null)
 {
     public const int MaxLogLines = 200;
     private static readonly TimeSpan PushDelay = TimeSpan.FromMilliseconds(120);
@@ -168,7 +169,9 @@ public sealed class SwarmService(
             WorkerMode: config.Mode == PermissionMode.Bypass ? PermissionMode.Bypass : PermissionMode.AcceptEdits,
             UserConfigDirectory: settings.UserConfigDirectory,
             Hooks: config.Hooks.Count > 0 ? new ProcessHooks(config.Hooks) : null,
-            Log: e => OnLog(swarmId, live, e));
+            Log: e => OnLog(swarmId, live, e),
+            WorkerSandbox: worktree => new SandboxPolicy(config, sandboxes).For(
+                config.Mode == PermissionMode.Bypass ? PermissionMode.Bypass : PermissionMode.AcceptEdits, swarmWorker: true, [worktree]));
 
         var runner = new SwarmRunner(swarms, sessions, provider, setup);
         live.Run = Task.Run(async () =>

@@ -25,7 +25,8 @@ public sealed class AgentHost(
     Func<AgentEventDto, Task> notify,
     Func<Task> sessionsChanged,
     Func<KairoConfig, IModelProvider>? createProvider = null,
-    McpManager? mcp = null)
+    McpManager? mcp = null,
+    ISandboxProvider? sandboxes = null)
 {
     public const string NewSessionTitle = "Новая сессия";
 
@@ -134,6 +135,8 @@ public sealed class AgentHost(
         var recorder = new TurnRecorder(store.Checkpoints, sessionId, turnNumber);
         recorder.Recorded += c => _ = _notify(new AgentEventDto(sessionId, "checkpoint", CheckpointId: c.Id, Files: c.Files));
         live.Tools.History = recorder;
+        // Re-decided every turn: the user may have changed the mode or the settings since the last one.
+        live.Tools.Sandbox = new SandboxPolicy(config, sandboxes).For(live.Permissions.Mode, swarmWorker: false, [live.Tools.WorkingDirectory]);
         var note = live.PendingNote;
         live.PendingNote = null;
         if (commandNote is not null)

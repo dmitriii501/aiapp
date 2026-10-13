@@ -3,9 +3,11 @@ using Kairo.Core.Models;
 using Kairo.Core.Permissions;
 using Kairo.Core.Secrets;
 using Kairo.Core.Sessions;
+using Kairo.Core.Tools;
 using Kairo.Host;
 using Kairo.Swarm;
 using Kairo.Tools;
+using Kairo.Windows;
 
 namespace Kairo.Cli;
 
@@ -93,7 +95,9 @@ internal static class SwarmCommand
             WorkerMode: mode == PermissionMode.Bypass ? PermissionMode.Bypass : PermissionMode.AcceptEdits,
             UserConfigDirectory: userConfigDir,
             Hooks: config.Hooks.Count > 0 ? new ProcessHooks(config.Hooks) : null,
-            Log: Print);
+            Log: Print,
+            WorkerSandbox: worktree => new SandboxPolicy(config, new AppContainerSandboxProvider()).For(
+                mode == PermissionMode.Bypass ? PermissionMode.Bypass : PermissionMode.AcceptEdits, swarmWorker: true, [worktree]));
 
         ConsoleUi.Write(ConsoleColor.Magenta, "Kairo swarm");
         ConsoleUi.Write(ConsoleColor.DarkGray, $"  {info.Id} · {model} · up to {info.Limits.MaxAgents} agents · {info.Limits.MaxTokens:N0} tokens · {cwd}\n");

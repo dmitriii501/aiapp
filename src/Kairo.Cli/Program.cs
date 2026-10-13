@@ -129,7 +129,7 @@ var agent = new Agent(
     new ToolRegistry(BuiltinTools.All(() => ProviderFactory.WebSearchOf(config, secrets), userConfigDirectory: userConfigDir).Concat(mcp.Tools)),
     new PermissionEngine(rules, mode),
     ui,
-    new ToolContext(cwd),
+    new ToolContext(cwd) { Sandbox = new SandboxPolicy(config, new AppContainerSandboxProvider()).For(mode, swarmWorker: false, [cwd]) },
     SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now, mode, SkillCatalog.Discover(cwd, userConfigDir)),
     new AgentOptions(model, options.Effort ?? config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
     Compaction.Effective(history))

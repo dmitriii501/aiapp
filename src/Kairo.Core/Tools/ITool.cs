@@ -54,6 +54,25 @@ public interface ISubagents
     Task<ToolResult> RunAsync(string type, string task, CancellationToken ct);
 }
 
+/// <summary>A process to run: the program, its arguments and how long it may take.</summary>
+public sealed record ProcessLaunch(string FileName, IReadOnlyList<string> Arguments, string WorkingDirectory, int TimeoutMs);
+
+/// <summary>What a finished process left behind: stdout and stderr together, in the order they were written.</summary>
+public sealed record ProcessOutcome(int ExitCode, string Output, bool TimedOut);
+
+/// <summary>
+/// Runs commands in a restricted environment (the Windows AppContainer, see docs/SECURITY-MODEL.md → Песочница). When a session has one,
+/// <c>Shell</c> uses it instead of starting a process with the user's full rights.
+/// </summary>
+public interface IProcessSandbox
+{
+    /// <summary>Folders the sandboxed commands may change. File tools use the same list.</summary>
+    IReadOnlyList<string> WritablePaths { get; }
+
+    /// <summary>Runs the process to the end, the timeout or cancellation, and kills everything it started.</summary>
+    Task<ProcessOutcome> RunAsync(ProcessLaunch launch, CancellationToken ct);
+}
+
 /// <summary>Per-session state shared by tools.</summary>
 public sealed class ToolContext(string workingDirectory)
 {
@@ -61,6 +80,9 @@ public sealed class ToolContext(string workingDirectory)
 
     /// <summary>Set by the host for each turn; null when nobody keeps checkpoints (the CLI).</summary>
     public IFileHistory? History { get; set; }
+
+    /// <summary>Set by the host when the session is autonomous; null runs commands with the user's own rights.</summary>
+    public IProcessSandbox? Sandbox { get; set; }
 
     /// <summary>Set by the agent loop; the Task tool uses it to start subagents.</summary>
     public ISubagents? Subagents { get; set; }
@@ -75,6 +97,23 @@ public sealed class ToolContext(string workingDirectory)
     {
         var root = WorkingDirectory.EndsWith(Path.DirectorySeparatorChar) ? WorkingDirectory : WorkingDirectory + Path.DirectorySeparatorChar;
         return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) || string.Equals(fullPath, WorkingDirectory, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// With a sandbox, files are changed only inside the folders it may write to, the same fence that holds for commands. Returns the
+    /// reason to refuse, or null when the change is allowed.
+    /// </summary>
+    public string? SandboxDenial(string fullPath)
+    {
+        if (Sandbox is null)
+            return null;
+        foreach (var root in Sandbox.WritablePaths)
+        {
+            var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+            if (fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase))
+                return null;
+        }
+        return $"{fullPath} is outside the folders this session may change ({string.Join(", ", Sandbox.WritablePaths.Take(3))}). Work inside them.";
     }
 
     public string DisplayPath(string fullPath) =>

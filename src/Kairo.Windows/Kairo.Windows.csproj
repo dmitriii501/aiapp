@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Kairo.Core\Kairo.Core.csproj" />
+    <InternalsVisibleTo Include="Kairo.Core.Tests" />
   </ItemGroup>
 
 </Project>

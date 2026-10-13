@@ -38,6 +38,11 @@ namespace Kairo.Core.Config;
 /// command = "pwsh -File C:/hooks/check.ps1"      # gets the event as JSON on stdin; exit code 2 blocks
 /// timeout = 30
 ///
+/// [sandbox]                                    # user file only
+/// shell = "autonomous"                           # off | autonomous (no-confirmation mode, swarm workers) | always
+/// network = false                                # outgoing connections from sandboxed commands
+/// read = ["C:/Python313"]                        # extra folders they may read (toolchains outside Program Files)
+///
 /// [web]
 /// search = "searxng"                             # "brave" (key in settings) or "searxng"
 /// searxng_url = "http://localhost:8080"          # your SearXNG instance, JSON format enabled
@@ -71,8 +76,25 @@ public sealed class KairoConfig
     /// <summary>Address of a SearXNG instance (<c>[web] searxng_url</c>). Read from the user's file only: it receives the agent's queries.</summary>
     public string? SearxngUrl { get; set; }
 
+    /// <summary>
+    /// Where shell commands run in the Windows sandbox (<c>[sandbox] shell</c>): "off" (default), "autonomous" (sessions without
+    /// confirmations and swarm workers) or "always". Read from the user's file only: a repository must not weaken it.
+    /// </summary>
+    public string? SandboxShell { get; set; }
+
+    /// <summary>Let sandboxed commands reach the network (<c>[sandbox] network</c>, default false). User's file only.</summary>
+    public bool? SandboxNetwork { get; set; }
+
+    /// <summary>Extra folders sandboxed commands may read, e.g. a Python install (<c>[sandbox] read</c>). User's file only.</summary>
+    public List<string> SandboxRead { get; } = [];
+
+    /// <summary>Memory limit of everything one sandboxed command starts, in MB (<c>[sandbox] memory_mb</c>). User's file only.</summary>
+    public int? SandboxMemoryMb { get; set; }
+
     /// <summary>Hooks (<c>[[hooks]]</c>). Commands that run on the user's machine: read from the user's file only.</summary>
     public List<HookConfig> Hooks { get; } = [];
+
+    public static readonly string[] SandboxShellModes = ["off", "autonomous", "always"];
 
     public const int DefaultContextWindow = 128_000;
     public const double DefaultCompactAt = 0.8;
@@ -109,8 +131,14 @@ public sealed class KairoConfig
             var userMode = config.Mode;
             var userHooks = config.Hooks.ToList();
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
+            var userRead = config.SandboxRead.ToList();
+            var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
+            // The sandbox is the user's fence; a project can neither lift it nor open more of the disk to it.
+            (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb) = (sandbox, sandboxNetwork, sandboxMemory);
+            config.SandboxRead.Clear();
+            config.SandboxRead.AddRange(userRead);
             // A project cannot add commands that run on the user's machine.
             config.Hooks.Clear();
             config.Hooks.AddRange(userHooks);
@@ -235,6 +263,21 @@ public sealed class KairoConfig
         {
             WebSearch = String(web, "search") ?? WebSearch;
             SearxngUrl = String(web, "searxng_url") ?? SearxngUrl;
+        }
+
+        if (table.TryGetValue("sandbox", out var sb) && sb is TomlTable sandbox)
+        {
+            if (String(sandbox, "shell") is { } shell)
+            {
+                if (!SandboxShellModes.Contains(shell, StringComparer.OrdinalIgnoreCase))
+                    throw new FormatException($"{source}: [sandbox] shell must be \"off\", \"autonomous\" or \"always\", not \"{shell}\".");
+                SandboxShell = shell.ToLowerInvariant();
+            }
+            if (sandbox.TryGetValue("network", out var net) && net is bool allowNetwork)
+                SandboxNetwork = allowNetwork;
+            if (sandbox.TryGetValue("memory_mb", out var mem) && mem is long megabytes)
+                SandboxMemoryMb = (int)Math.Clamp(megabytes, 128, 65_536);
+            SandboxRead.AddRange(Strings(sandbox, "read"));
         }
 
         if (table.TryGetValue("update", out var u) && u is TomlTable update)

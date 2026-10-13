@@ -43,19 +43,22 @@ public sealed partial class MainWindow : Window
         var ctx = ProtocolJsonContext.Default;
         var mcpConfig = new McpConfigStore(McpConfigStore.DefaultPath);
         var mcpManager = new McpManager(mcpConfig);
+        var sandboxes = new AppContainerSandboxProvider();
         var host = new AgentHost(
             _store,
             settings,
             notify: ev => _rpc.NotifyAsync(Notifications.AgentEvent, ev, ctx.AgentEventDto),
             sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty),
-            mcp: mcpManager);
+            mcp: mcpManager,
+            sandboxes: sandboxes);
         var swarmStore = new SwarmStore(SwarmStore.DefaultPath);
         var swarms = new SwarmService(
             swarmStore,
             _store,
             settings,
             detail => _rpc.NotifyAsync(Notifications.SwarmChanged, detail, ctx.SwarmDetail),
-            mcp: mcpManager);
+            mcp: mcpManager,
+            sandboxes: sandboxes);
         var shell = ShellLocator.Find();
         var terminals = new TerminalService(
             new ConPtyFactory(),
@@ -69,6 +72,7 @@ public sealed partial class MainWindow : Window
         Task ShutDown()
         {
             terminals.Dispose();
+            AppContainerSandbox.RevokeAll();
             swarms.StopAll();
             swarmStore.Dispose();
             mcpManager.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
