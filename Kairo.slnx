@@ -9,6 +9,7 @@
     <Project Path="src/Kairo.Mcp/Kairo.Mcp.csproj" />
     <Project Path="src/Kairo.Protocol/Kairo.Protocol.csproj" />
     <Project Path="src/Kairo.Providers/Kairo.Providers.csproj" />
+    <Project Path="src/Kairo.Swarm/Kairo.Swarm.csproj" />
     <Project Path="src/Kairo.Tools/Kairo.Tools.csproj" />
     <Project Path="src/Kairo.Windows/Kairo.Windows.csproj" />
   </Folder>

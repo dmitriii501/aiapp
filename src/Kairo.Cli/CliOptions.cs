@@ -14,6 +14,11 @@ internal sealed class CliOptions
     public string? WorkingDirectory { get; private set; }
     public List<string> Allow { get; } = [];
     public bool NoMcp { get; private set; }
+    public List<string> Positional { get; } = [];
+    public int? Workers { get; private set; }
+    public long? MaxTokens { get; private set; }
+    public int? MaxMinutes { get; private set; }
+    public int? Concurrency { get; private set; }
     public bool Help { get; private set; }
 
     public const string Usage = """
@@ -25,6 +30,8 @@ internal sealed class CliOptions
           kairo -c                   continue the latest session in this directory
           kairo -r <id>              resume a session by id
           kairo sessions             list recent sessions
+          kairo swarm "<goal>"       run a swarm: a lead and workers in git worktrees (see docs/specs/swarm.md)
+          kairo swarm list | status <id> | resume <id>
 
         Options:
           --provider <id>            anthropic (default) | openai-compatible
@@ -35,6 +42,10 @@ internal sealed class CliOptions
           --mode <mode>              default | acceptEdits | plan | bypass
           --allow "<rule>"           extra allow rule, e.g. "Shell(dotnet test:*)" (repeatable)
           --cwd <dir>                working directory
+          --workers <n>              swarm: most workers (default 4)
+          --max-tokens <n>           swarm: token budget over all agents (default 3000000)
+          --max-minutes <n>          swarm: time limit (default 120)
+          --concurrency <n>          swarm: model requests at once (default 3)
           --no-mcp                   do not connect MCP servers from %APPDATA%\Kairo\mcp.json
 
         Keys: ANTHROPIC_API_KEY for anthropic, KAIRO_API_KEY for openai-compatible (optional).
@@ -64,6 +75,12 @@ internal sealed class CliOptions
                 case "--cwd": o.WorkingDirectory = Next(); break;
                 case "--no-mcp": o.NoMcp = true; break;
                 case "sessions" when o.Command is null: o.Command = "sessions"; break;
+                case "swarm" when o.Command is null: o.Command = "swarm"; break;
+                case "--workers": o.Workers = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+                case "--max-tokens": o.MaxTokens = long.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+                case "--max-minutes": o.MaxMinutes = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+                case "--concurrency": o.Concurrency = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+                case not null when o.Command == "swarm" && !a.StartsWith('-'): o.Positional.Add(a); break;
                 default: throw new ArgumentException($"Unknown argument '{a}'. Run 'kairo --help'.");
             }
         }

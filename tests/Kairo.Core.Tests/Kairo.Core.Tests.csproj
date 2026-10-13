@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\Kairo.Core\Kairo.Core.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Providers\Kairo.Providers.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Tools\Kairo.Tools.csproj" />
+    <ProjectReference Include="..\..\src\Kairo.Swarm\Kairo.Swarm.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Host\Kairo.Host.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Mcp\Kairo.Mcp.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Windows\Kairo.Windows.csproj" />

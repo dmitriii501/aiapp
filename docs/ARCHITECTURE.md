@@ -61,6 +61,7 @@ flowchart TB
 | `Kairo.Core` | Agent loop, контекст, compaction, разрешения, хуки, сабагенты, сессии, чекпоинты | Protocol |
 | `Kairo.Providers` | Адаптеры моделей, профили возможностей, лимиты запросов | Core |
 | `Kairo.Mcp` | MCP-клиент, OAuth | Core |
+| `Kairo.Swarm` | Рой: доска задач, сообщения, git worktrees, планировщик лида и воркеров, бюджеты (CLI `kairo swarm`) | Core, Tools |
 | `Kairo.Tools` | Read, Write, Edit, Glob, Grep, Shell, WebFetch… | Core, Windows |
 | `Kairo.Swarm` | Рой: оркестратор, доска задач, шина сообщений, бюджеты | Core |
 | `Kairo.Policy` | Политики решений: схема, валидация, рантайм (рефлексы → System 1 → эскалация), экстракторы восприятия | Core, Providers, Windows |

@@ -9,6 +9,7 @@ using Kairo.Core.Sessions;
 using Kairo.Core.Tools;
 using Kairo.Host;
 using Kairo.Mcp;
+using Kairo.Swarm;
 using Kairo.Tools;
 using Kairo.Windows;
 
@@ -41,6 +42,9 @@ if (options.Command == "sessions")
         Console.WriteLine($"{s.Id}  {s.UpdatedAt.LocalDateTime:yyyy-MM-dd HH:mm}  {s.Model,-20}  {s.Title}  [{s.WorkingDirectory}]");
     return 0;
 }
+
+if (options.Command == "swarm" && (options.Positional.FirstOrDefault() is "list" or "status" or null))
+    return SwarmCommand.Inspect(options);
 
 KairoConfig config;
 PermissionRules rules;
@@ -84,6 +88,9 @@ catch (ProviderSetupException ex)
     });
 }
 var model = ProviderFactory.ModelOf(config);
+
+if (options.Command == "swarm")
+    return await SwarmCommand.RunAsync(options, cwd, config, rules, mode, provider, model, store, userConfigDir, new CredentialStore());
 
 // Session: new, --continue, or --resume.
 SessionInfo? session = null;
