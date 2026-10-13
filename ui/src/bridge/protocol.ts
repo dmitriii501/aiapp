@@ -15,6 +15,11 @@ export const Methods = {
   SessionSetMode: "session.setMode",
   SessionCompact: "session.compact",
   PermissionRespond: "permission.respond",
+  SwarmList: "swarm.list",
+  SwarmGet: "swarm.get",
+  SwarmStart: "swarm.start",
+  SwarmStop: "swarm.stop",
+  SwarmResume: "swarm.resume",
   McpList: "mcp.list",
   McpAdd: "mcp.add",
   McpRemove: "mcp.remove",
@@ -35,6 +40,7 @@ export const Methods = {
 export const Notifications = {
   AgentEvent: "agent.event",
   SessionsChanged: "sessions.changed",
+  SwarmChanged: "swarm.changed",
   McpChanged: "mcp.changed",
   UpdateChanged: "update.changed",
   TerminalOutput: "terminal.output",
@@ -235,6 +241,80 @@ export interface McpListResult {
   imported?: string[];
 }
 
+/* ---------- Swarms ---------- */
+
+export type SwarmStatus = "running" | "paused" | "stalled" | "done" | "failed";
+
+export interface SwarmSummary {
+  id: string;
+  goal: string;
+  status: SwarmStatus;
+  workingDirectory: string;
+  tokensUsed: number;
+  maxTokens: number;
+  updatedAt: string;
+  /** This app is driving the swarm right now. */
+  running: boolean;
+}
+
+export interface SwarmAgent {
+  name: string;
+  role: "lead" | "coder";
+  status: "idle" | "working" | "error";
+  branch?: string;
+  workingDirectory: string;
+}
+
+export type SwarmTaskStatus = "pending" | "in_progress" | "done" | "failed";
+
+export interface SwarmTask {
+  seq: number;
+  title: string;
+  description: string;
+  status: SwarmTaskStatus;
+  assignee?: string;
+  dependsOn: number[];
+  result?: string;
+}
+
+export interface SwarmMessage {
+  id: number;
+  from: string;
+  to: string;
+  text: string;
+  at: string;
+}
+
+export interface SwarmLogLine {
+  seq: number;
+  kind: "spawn" | "status" | "tool" | "said" | "limit" | "end";
+  agent: string;
+  text: string;
+}
+
+export interface SwarmDetail {
+  summary: SwarmSummary;
+  maxAgents: number;
+  maxMinutes: number;
+  maxConcurrency: number;
+  modelCalls: number;
+  /** The lead's final report, or why the swarm failed. */
+  report?: string;
+  agents: SwarmAgent[];
+  tasks: SwarmTask[];
+  messages: SwarmMessage[];
+  log: SwarmLogLine[];
+  pendingPermissions: PermissionPrompt[];
+}
+
+export interface SwarmStartParams {
+  workingDirectory: string;
+  goal: string;
+  workers?: number;
+  maxTokens?: number;
+  maxMinutes?: number;
+}
+
 type NoParams = Record<string, never>;
 
 export interface MethodMap {
@@ -252,6 +332,11 @@ export interface MethodMap {
   [Methods.SessionSetMode]: { params: { sessionId: string; mode: Mode }; result: Ok };
   [Methods.SessionCompact]: { params: { sessionId: string; focus?: string }; result: Ok };
   [Methods.PermissionRespond]: { params: { requestId: string; decision: Decision }; result: Ok };
+  [Methods.SwarmList]: { params: NoParams; result: { swarms: SwarmSummary[] } };
+  [Methods.SwarmGet]: { params: { swarmId: string }; result: SwarmDetail };
+  [Methods.SwarmStart]: { params: SwarmStartParams; result: SwarmSummary };
+  [Methods.SwarmStop]: { params: { swarmId: string }; result: Ok };
+  [Methods.SwarmResume]: { params: { swarmId: string; maxTokens?: number }; result: SwarmDetail };
   [Methods.McpList]: { params: NoParams; result: McpListResult };
   [Methods.McpAdd]: { params: { name: string; command?: string; url?: string }; result: McpListResult };
   [Methods.McpRemove]: { params: { name: string }; result: McpListResult };
@@ -272,6 +357,7 @@ export interface MethodMap {
 export interface NotificationMap {
   [Notifications.AgentEvent]: AgentEvent;
   [Notifications.SessionsChanged]: NoParams;
+  [Notifications.SwarmChanged]: SwarmDetail;
   [Notifications.McpChanged]: McpListResult;
   [Notifications.UpdateChanged]: UpdateStatus;
   [Notifications.TerminalOutput]: { terminalId: string; data: string };

@@ -1,5 +1,5 @@
 import type { RpcMessage } from "./bridge";
-import type { AgentEvent, McpListResult, McpServerInfo, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, UpdateStatus, Workspace } from "./protocol";
+import type { AgentEvent, SwarmDetail, SwarmLogLine, McpListResult, McpServerInfo, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, UpdateStatus, Workspace } from "./protocol";
 import { Methods, Notifications } from "./protocol";
 
 // In-memory stand-in for the core, so the UI can be developed with `npm run dev` in a browser.
@@ -177,6 +177,105 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
     notify(Notifications.SessionsChanged, {});
   }
 
+  // ---- A made-up swarm: a lead and two coders, one shared question, then a report ----
+
+  const swarmDetails = new Map<string, SwarmDetail>();
+  const pushSwarm = (d: SwarmDetail) => notify(Notifications.SwarmChanged, structuredClone(d));
+
+  async function runSwarm(id: string) {
+    const d = swarmDetails.get(id)!;
+    let seq = 0;
+    const log = (kind: SwarmLogLine["kind"], agent: string, text: string) => {
+      d.log.push({ seq: ++seq, kind, agent, text });
+      pushSwarm(d);
+    };
+    const task = (n: number, status: "pending" | "in_progress" | "done", result?: string) => {
+      const t = d.tasks.find((x) => x.seq === n)!;
+      t.status = status;
+      if (result) t.result = result;
+      d.summary.tokensUsed += 31_000;
+      d.modelCalls += 3;
+      pushSwarm(d);
+    };
+    const setAgent = (name: string, status: "idle" | "working") => {
+      d.agents.find((a) => a.name === name)!.status = status;
+    };
+
+    setAgent("lead", "working");
+    log("tool", "lead", "Glob(**/*.cs)");
+    await sleep(500);
+    for (const [n, title, description, deps] of [
+      [1, "Тесты на парсер конфигурации", "Покрыть Parse и ошибки в tests/ConfigTests.cs", []],
+      [2, "Описать формат в README", "Раздел «Конфигурация» с примером config.toml", []],
+      [3, "Прогнать сборку и тесты", "dotnet build и dotnet test, исправить найденное", [1, 2]],
+    ] as [number, string, string, number[]][]) {
+      d.tasks.push({ seq: n, title, description, status: "pending", dependsOn: deps });
+    }
+    log("tool", "lead", "task_create ×3");
+    for (const name of ["coder-1", "coder-2"]) {
+      d.agents.push({ name, role: "coder", status: "idle", branch: `kairo/${id}/${name}`, workingDirectory: `C:\\Users\\dev\\.kairo\\swarms\\${id}\\${name}` });
+      log("spawn", name, `${name} started on branch kairo/${id}/${name}`);
+      await sleep(250);
+    }
+    d.tasks[0].assignee = "coder-1";
+    d.tasks[1].assignee = "coder-2";
+    setAgent("lead", "idle");
+    log("said", "lead", "Задачи розданы, жду отчётов.");
+    await sleep(500);
+
+    setAgent("coder-1", "working");
+    setAgent("coder-2", "working");
+    task(1, "in_progress");
+    task(2, "in_progress");
+    log("tool", "coder-1", "Read(src/Config/Parser.cs)");
+    log("tool", "coder-2", "Read(README.md)");
+    await sleep(700);
+    log("tool", "coder-1", "Shell(dotnet test --filter Config)");
+
+    // Both workers want to run the same command: one question for the user.
+    const prompts = ["coder-1", "coder-2"].map((who) => ({
+      requestId: Math.random().toString(16).slice(2, 10),
+      tool: "Shell",
+      summary: `[${who}] Shell(dotnet test --filter Config)`,
+      subject: "dotnet test --filter Config",
+      risk: "exec" as const,
+      reason: "exec needs approval",
+    }));
+    d.pendingPermissions = prompts;
+    pushSwarm(d);
+    await Promise.all(prompts.map((pr) => new Promise<string>((resolve) => waiting.set(pr.requestId, resolve))));
+    d.pendingPermissions = [];
+    pushSwarm(d);
+
+    log("tool", "coder-2", "Edit(README.md)");
+    await sleep(600);
+    d.messages.push({ id: 1, from: "coder-1", to: "lead", text: "Парсер падает на пустом файле: добавил проверку и тест.", at: new Date().toISOString() });
+    task(2, "done", "Добавил раздел «Конфигурация» с примером.");
+    setAgent("coder-2", "idle");
+    log("said", "coder-2", "README готов.");
+    await sleep(600);
+    task(1, "done", "5 тестов, все проходят; исправил падение на пустом файле.");
+    setAgent("coder-1", "idle");
+    log("said", "coder-1", "Тесты готовы.");
+    await sleep(400);
+
+    setAgent("lead", "working");
+    log("tool", "lead", "merge_agent(coder-1 → kairo)");
+    log("tool", "lead", "merge_agent(coder-2 → kairo)");
+    await sleep(600);
+    d.tasks[2].assignee = "coder-1";
+    setAgent("coder-1", "working");
+    task(3, "in_progress");
+    await sleep(700);
+    task(3, "done", "Сборка и 41 тест проходят.");
+    setAgent("coder-1", "idle");
+    setAgent("lead", "idle");
+    d.summary.status = "done";
+    d.summary.running = false;
+    d.report = "Добавлены тесты на парсер конфигурации (5 штук) и раздел «Конфигурация» в README. Исправлено падение на пустом файле. Ветки coder-1 и coder-2 слиты в основную папку; сборка и тесты проходят.";
+    log("end", "lead", "the lead finished the swarm");
+  }
+
   function handle(m: RpcMessage): unknown {
     const p = (m.params ?? {}) as Record<string, string>;
     switch (m.method) {
@@ -281,6 +380,26 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       case Methods.TerminalClose:
         shells.delete(p.terminalId);
         return { success: true };
+      case Methods.SwarmList:
+        return { swarms: [...swarmDetails.values()].map((d) => d.summary).reverse() };
+      case Methods.SwarmGet:
+        return swarmDetails.get(p.swarmId)!;
+      case Methods.SwarmStart: {
+        const params = m.params as { workingDirectory: string; goal: string; maxTokens?: number };
+        const id = Math.random().toString(16).slice(2, 10);
+        const detail: SwarmDetail = {
+          summary: { id, goal: params.goal, status: "running", workingDirectory: params.workingDirectory, tokensUsed: 0, maxTokens: params.maxTokens ?? 3_000_000, updatedAt: new Date().toISOString(), running: true },
+          maxAgents: 4, maxMinutes: 120, maxConcurrency: 3, modelCalls: 0,
+          agents: [{ name: "lead", role: "lead", status: "idle", workingDirectory: params.workingDirectory }],
+          tasks: [], messages: [], log: [], pendingPermissions: [],
+        };
+        swarmDetails.set(id, detail);
+        void runSwarm(id);
+        return detail.summary;
+      }
+      case Methods.SwarmStop:
+      case Methods.SwarmResume:
+        return p.swarmId ? swarmDetails.get(p.swarmId) ?? { success: true } : { success: true };
       case Methods.McpList:
       case Methods.McpReload:
         return mcpList();

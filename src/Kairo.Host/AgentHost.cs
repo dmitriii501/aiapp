@@ -243,15 +243,17 @@ public sealed class AgentHost(
             live.Turn?.Cancel();
     }
 
+    public static PermissionAnswer ParseAnswer(string decision) => decision switch
+    {
+        "allow" => PermissionAnswer.Allow,
+        "always" => PermissionAnswer.AllowAlways,
+        "deny" => PermissionAnswer.Deny,
+        _ => throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестное решение «{decision}»."),
+    };
+
     public void RespondPermission(string requestId, string decision)
     {
-        var answer = decision switch
-        {
-            "allow" => PermissionAnswer.Allow,
-            "always" => PermissionAnswer.AllowAlways,
-            "deny" => PermissionAnswer.Deny,
-            _ => throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестное решение «{decision}»."),
-        };
+        var answer = ParseAnswer(decision);
         if (!_pending.TryGetValue(requestId, out var pending) || !pending.Answer.TrySetResult(answer))
             throw new RpcException(RpcErrorCodes.InvalidParams, "Запрос уже обработан.");
     }

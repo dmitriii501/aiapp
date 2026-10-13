@@ -171,7 +171,7 @@ public class SwarmTests : IDisposable
         }
     }
 
-    private static ModelResponse Team(string agent, ModelRequest request) => agent == "lead" ? Lead(agent, request) : Worker(agent, request);
+    internal static ModelResponse Team(string agent, ModelRequest request) => agent == "lead" ? Lead(agent, request) : Worker(agent, request);
 
     // ---- Tests ----
 
@@ -450,5 +450,138 @@ public class SwarmToolTests : IDisposable
 
         await new MemoryWriteTool(_host, "coder-1").InvokeAsync(In("""{"text":"tests live in /t"}"""), Ctx, default);
         Assert.Contains("(coder-1) tests live in /t", (await new MemoryReadTool(_host, "coder-2").InvokeAsync(In("{}"), Ctx, default)).Content);
+    }
+}
+
+[Collection("Swarm")]
+public class SwarmServiceTests : IDisposable
+{
+    private readonly TempDir _dir = new();
+    private readonly string _repo;
+    private readonly SwarmStore _swarms;
+    private readonly Kairo.Core.Sessions.SessionStore _sessions;
+    private readonly Kairo.Host.SettingsService _settings;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Kairo.Protocol.SwarmDetail> _pushed = new();
+
+    public SwarmServiceTests()
+    {
+        _repo = Path.Combine(_dir.Path, "repo");
+        Directory.CreateDirectory(_repo);
+        _swarms = new SwarmStore(Path.Combine(_dir.Path, "swarms.db"));
+        _sessions = new Kairo.Core.Sessions.SessionStore(Path.Combine(_dir.Path, "data.db"));
+        _settings = new Kairo.Host.SettingsService(Path.Combine(_dir.Path, "user"), new Kairo.Core.Secrets.InMemorySecretStore());
+    }
+
+    public void Dispose()
+    {
+        _swarms.Dispose();
+        _sessions.Dispose();
+        try { Directory.Delete(_dir.Path, recursive: true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private async Task InitRepoAsync()
+    {
+        foreach (var args in new[] { new[] { "init", "-q" }, ["config", "user.name", "t"], ["config", "user.email", "t@t"] })
+            await GitWorkspace.RunAsync(_repo, args);
+        File.WriteAllText(Path.Combine(_repo, "README.md"), "# demo\n");
+        await GitWorkspace.RunAsync(_repo, ["add", "-A"]);
+        await GitWorkspace.RunAsync(_repo, ["commit", "-q", "-m", "init"]);
+    }
+
+    private Kairo.Host.SwarmService NewService(IModelProvider model)
+    {
+        _sessions.TouchWorkspace(_repo);
+        return new Kairo.Host.SwarmService(_swarms, _sessions, _settings, d => { _pushed.Enqueue(d); return Task.CompletedTask; }, _ => model);
+    }
+
+    private static async Task<T> Eventually<T>(Func<T?> probe, int seconds = 30) where T : class
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (probe() is { } found)
+                return found;
+            await Task.Delay(20);
+        }
+        throw new TimeoutException("The swarm did not get there in time.");
+    }
+
+    [Fact]
+    public async Task A_swarm_started_from_the_ui_runs_asks_before_merging_and_reports_its_state()
+    {
+        await InitRepoAsync();
+        var service = NewService(new SwarmModel(SwarmTests.Team));
+
+        var summary = await service.StartAsync(new Kairo.Protocol.SwarmStartParams(_repo, "add two files", Workers: 2), default);
+        Assert.True(summary.Running);
+
+        // The user answers every question the swarm asks, as the UI would.
+        var asked = new List<string>();
+        var detail = await Eventually(() =>
+        {
+            var d = service.Get(summary.Id);
+            foreach (var prompt in d.PendingPermissions)
+            {
+                asked.Add(prompt.Summary);
+                service.TryRespond(prompt.RequestId, Kairo.Core.Agents.PermissionAnswer.Allow);
+            }
+            return d.Summary.Running ? null : d;
+        });
+
+        Assert.Equal("done", detail.Summary.Status);
+        Assert.Equal("Both files were added and merged.", detail.Report);
+        Assert.Equal(3, detail.Agents.Count);
+        Assert.All(detail.Tasks, t => Assert.Equal("done", t.Status));
+        Assert.Contains(detail.Log, l => l.Kind == "tool" && l.Agent == "coder-1");
+        Assert.Contains(asked, a => a.StartsWith("[lead] merge_agent(coder-", StringComparison.Ordinal));
+        Assert.True(File.Exists(Path.Combine(_repo, "coder-1.txt")));
+        Assert.Contains(_pushed, d => d.Summary.Running && d.Log.Count > 0); // updates were pushed while it ran
+        Assert.False(service.AnyRunning());
+    }
+
+    [Fact]
+    public async Task A_running_swarm_can_be_paused_and_resumed_with_a_new_budget()
+    {
+        await InitRepoAsync();
+        var model = new SwarmModel((agent, request) =>
+        {
+            Thread.Sleep(150);
+            return SwarmTests.Team(agent, request);
+        });
+        var service = NewService(model);
+        var summary = await service.StartAsync(new Kairo.Protocol.SwarmStartParams(_repo, "add two files", Workers: 2, MaxTokens: 50_000), default);
+
+        service.Stop(summary.Id);
+        var paused = await Eventually(() => service.Get(summary.Id) is { Summary.Running: false } d ? d : null);
+        Assert.Equal("paused", paused.Summary.Status);
+
+        var resumed = service.Resume(summary.Id, 900_000);
+        Assert.True(resumed.Summary.Running);
+        Assert.Equal(900_000, resumed.Summary.MaxTokens);
+        Assert.Throws<Kairo.Core.Rpc.RpcException>(() => service.Resume(summary.Id, null)); // already running
+
+        // Whoever asks is answered, so the swarm can end.
+        var final = await Eventually(() =>
+        {
+            var d = service.Get(summary.Id);
+            foreach (var p in d.PendingPermissions)
+                service.TryRespond(p.RequestId, Kairo.Core.Agents.PermissionAnswer.Allow);
+            return d.Summary.Running ? null : d;
+        });
+        Assert.Equal("done", final.Summary.Status);
+    }
+
+    [Fact]
+    public async Task A_swarm_needs_a_known_git_folder_and_a_goal()
+    {
+        var service = NewService(new SwarmModel(SwarmTests.Team));
+        var plain = Path.Combine(_dir.Path, "plain");
+        Directory.CreateDirectory(plain);
+        _sessions.TouchWorkspace(plain);
+
+        await Assert.ThrowsAsync<Kairo.Core.Rpc.RpcException>(() => service.StartAsync(new Kairo.Protocol.SwarmStartParams(_repo, "   "), default));
+        var ex = await Assert.ThrowsAsync<Kairo.Core.Rpc.RpcException>(() => service.StartAsync(new Kairo.Protocol.SwarmStartParams(plain, "goal"), default));
+        Assert.Contains("git", ex.Message);
+        await Assert.ThrowsAsync<Kairo.Core.Rpc.RpcException>(() => service.StartAsync(new Kairo.Protocol.SwarmStartParams(@"C:\", "goal"), default));
     }
 }

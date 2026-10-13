@@ -7,6 +7,20 @@ import "./styles.css";
 
 // Mock-only demos for screenshots and UI work in a browser:
 // index.html#demo (waiting for approval), #demo-done (finished turn), #demo-compact, #settings, #mcp.
+if (bridge.kind === "mock" && location.hash.startsWith("#swarm")) {
+  // #swarm: a swarm running (an approval waits); #swarm-done: the finished swarm; #swarm-new: the start form.
+  setTimeout(async () => {
+    const store = useStore.getState();
+    store.setView("swarms");
+    if (location.hash === "#swarm-new") return;
+    await store.startSwarm({ workingDirectory: store.workspaces[0].path, goal: "Добавить тесты на парсер конфигурации и описать формат в README", workers: 2, maxTokens: 2_000_000 });
+    if (location.hash === "#swarm-done") {
+      useStore.subscribe((state) => {
+        for (const prompt of state.swarm?.pendingPermissions ?? []) void state.respond(prompt.requestId, "allow");
+      });
+    }
+  }, 300);
+}
 if (bridge.kind === "mock" && location.hash === "#mcp") {
   setTimeout(() => useStore.getState().setMcpOpen(true), 300);
 }

@@ -1788,3 +1788,417 @@ select.input {
     animation: none;
   }
 }
+
+/* ---------- Swarm ---------- */
+
+.swarm {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 12px 20px 20px;
+  gap: 12px;
+}
+
+.swarm--loading {
+  color: var(--muted);
+  padding: 24px;
+}
+
+.swarm__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.swarm__titleline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.swarm__goal {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.swarm__spacer {
+  flex: 1;
+}
+
+.swarm__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--muted);
+}
+
+.swarm__more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.swarm__more .input {
+  width: 100px;
+}
+
+.chip {
+  padding: 0 8px;
+  height: 18px;
+  line-height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chip--running {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip--done {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.chip--paused,
+.chip--stalled {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.chip--failed {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.budget {
+  width: 120px;
+  height: 4px;
+  background: var(--border);
+}
+
+.budget__bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.budget__bar--high {
+  background: var(--warn);
+}
+
+.swarm__heading {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.swarm__report {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  background: var(--code-bg);
+}
+
+.swarm__report--failed {
+  border-left-color: var(--error);
+}
+
+.swarm__approvals {
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  background: var(--widget);
+}
+
+.approval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.approval + .approval {
+  border-top: 1px solid var(--border);
+}
+
+.approval__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.approval__tool {
+  font-family: var(--font-mono);
+  font-size: var(--mono-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval__reason {
+  color: var(--muted);
+}
+
+.approval__buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.swarm__body {
+  flex: 1;
+  min-height: 320px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+}
+
+.swarm__side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.board {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.board__column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.board__count {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.board__empty {
+  margin: 0;
+  color: var(--faint);
+}
+
+.task {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  background: var(--widget);
+  cursor: pointer;
+}
+
+.task:hover {
+  background: var(--list-hover);
+}
+
+.task--in_progress {
+  border-left-color: var(--accent);
+}
+
+.task--done {
+  border-left-color: var(--ok);
+}
+
+.task--failed {
+  border-left-color: var(--error);
+}
+
+.task__title {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.task__num {
+  color: var(--faint);
+}
+
+.task__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.task__who {
+  color: var(--accent);
+}
+
+.task__blocked {
+  color: var(--warn);
+}
+
+.task__details {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  cursor: default;
+}
+
+.task__details p {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.agents {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+}
+
+.agent__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex-shrink: 0;
+}
+
+.agent__dot--working {
+  background: var(--accent);
+}
+
+.agent__dot--error {
+  background: var(--error);
+}
+
+.agent__name {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.agent__state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.feed {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+}
+
+.feed__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.feed__tab {
+  padding: 4px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+}
+
+.feed__tab--active {
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
+}
+
+.feed__lines {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px;
+  max-height: 420px;
+}
+
+.feed__line {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  padding: 1px 0;
+}
+
+.feed__agent {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed__text {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.feed__line--said .feed__text {
+  color: var(--text);
+}
+
+.feed__line--spawn .feed__text,
+.feed__line--end .feed__text {
+  color: var(--ok);
+}
+
+.feed__line--limit .feed__text {
+  color: var(--error);
+}
+
+.feed__line--status .feed__text {
+  color: var(--warn);
+}
+
+.swarm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+}
+
+.swarm-form__goal {
+  height: auto;
+  padding: 6px 8px;
+  resize: vertical;
+  font: inherit;
+}
+
+.swarm-form__limits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .swarm__body {
+    grid-template-columns: 1fr;
+  }
+}

@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Kairo.Core\Kairo.Core.csproj" />
     <ProjectReference Include="..\Kairo.Mcp\Kairo.Mcp.csproj" />
     <ProjectReference Include="..\Kairo.Providers\Kairo.Providers.csproj" />
+    <ProjectReference Include="..\Kairo.Swarm\Kairo.Swarm.csproj" />
     <ProjectReference Include="..\Kairo.Tools\Kairo.Tools.csproj" />
   </ItemGroup>
 

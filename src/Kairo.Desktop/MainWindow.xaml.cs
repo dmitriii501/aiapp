@@ -4,6 +4,7 @@ using Kairo.Core.Sessions;
 using Kairo.Host;
 using Kairo.Mcp;
 using Kairo.Protocol;
+using Kairo.Swarm;
 using Kairo.Windows;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -48,6 +49,13 @@ public sealed partial class MainWindow : Window
             notify: ev => _rpc.NotifyAsync(Notifications.AgentEvent, ev, ctx.AgentEventDto),
             sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty),
             mcp: mcpManager);
+        var swarmStore = new SwarmStore(SwarmStore.DefaultPath);
+        var swarms = new SwarmService(
+            swarmStore,
+            _store,
+            settings,
+            detail => _rpc.NotifyAsync(Notifications.SwarmChanged, detail, ctx.SwarmDetail),
+            mcp: mcpManager);
         var shell = ShellLocator.Find();
         var terminals = new TerminalService(
             new ConPtyFactory(),
@@ -61,6 +69,8 @@ public sealed partial class MainWindow : Window
         Task ShutDown()
         {
             terminals.Dispose();
+            swarms.StopAll();
+            swarmStore.Dispose();
             mcpManager.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
             _store.Dispose();
             return Task.CompletedTask;
@@ -72,11 +82,11 @@ public sealed partial class MainWindow : Window
         var updates = new UpdateService(
             new VelopackUpdater(feed),
             autoCheck: userConfig.UpdateCheck ?? true,
-            isBusy: host.AnyRunning,
+            isBusy: () => host.AnyRunning() || swarms.AnyRunning(),
             beforeRestart: ShutDown,
             notify: status => _rpc.NotifyAsync(Notifications.UpdateChanged, status, ctx.UpdateStatus));
 
-        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), terminals, updates, PickFolderAsync, hostName: "desktop");
+        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), swarms, terminals, updates, PickFolderAsync, hostName: "desktop");
 
         // Servers connect and updates are checked in the background; the window does not wait for them.
         _ = mcpManager.ReloadAsync();

@@ -15,6 +15,7 @@ public static class HostMethods
         SettingsService settings,
         SessionStore store,
         McpService mcp,
+        SwarmService swarms,
         TerminalService terminals,
         UpdateService updates,
         Func<Task<string?>> pickFolder,
@@ -102,9 +103,22 @@ public static class HostMethods
         rpc.Register(Methods.McpImportDesktop, ctx.Empty, ctx.McpListResult, (_, _) => Task.FromResult(mcp.ImportDesktop()));
         mcp.Changed += () => _ = rpc.NotifyAsync(Notifications.McpChanged, mcp.List(), ctx.McpListResult);
 
+        rpc.Register(Methods.SwarmList, ctx.Empty, ctx.SwarmListResult, (_, _) => Task.FromResult(swarms.List()));
+        rpc.Register(Methods.SwarmGet, ctx.SwarmIdParams, ctx.SwarmDetail, (p, _) => Task.FromResult(swarms.Get(p.SwarmId)));
+        rpc.Register(Methods.SwarmStart, ctx.SwarmStartParams, ctx.SwarmSummary, (p, ct) => swarms.StartAsync(p, ct));
+        rpc.Register(Methods.SwarmStop, ctx.SwarmIdParams, ctx.Ok, (p, _) =>
+        {
+            swarms.Stop(p.SwarmId);
+            return Task.FromResult(new Ok());
+        });
+        rpc.Register(Methods.SwarmResume, ctx.SwarmResumeParams, ctx.SwarmDetail, (p, _) => Task.FromResult(swarms.Resume(p.SwarmId, p.MaxTokens)));
+
+        // Questions from sessions and from swarms share one answer method: the request id says whose it is.
         rpc.Register(Methods.PermissionRespond, ctx.PermissionRespondParams, ctx.Ok, (p, _) =>
         {
-            host.RespondPermission(p.RequestId, p.Decision);
+            var answer = AgentHost.ParseAnswer(p.Decision);
+            if (!swarms.TryRespond(p.RequestId, answer))
+                host.RespondPermission(p.RequestId, p.Decision);
             return Task.FromResult(new Ok());
         });
     }

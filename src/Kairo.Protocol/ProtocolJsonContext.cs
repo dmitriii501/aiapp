@@ -46,4 +46,10 @@ namespace Kairo.Protocol;
 [JsonSerializable(typeof(McpAddParams))]
 [JsonSerializable(typeof(McpNameParams))]
 [JsonSerializable(typeof(McpEnabledParams))]
+[JsonSerializable(typeof(SwarmListResult))]
+[JsonSerializable(typeof(SwarmDetail))]
+[JsonSerializable(typeof(SwarmSummary))]
+[JsonSerializable(typeof(SwarmIdParams))]
+[JsonSerializable(typeof(SwarmStartParams))]
+[JsonSerializable(typeof(SwarmResumeParams))]
 public sealed partial class ProtocolJsonContext : JsonSerializerContext;

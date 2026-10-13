@@ -1,7 +1,9 @@
 import { useEffect } from "react";
-import { MessagesSquare, Settings } from "lucide-react";
+import { MessagesSquare, Network, Settings } from "lucide-react";
 import { useStore } from "./store";
 import { Sidebar } from "./components/Sidebar";
+import { SwarmSidebar } from "./components/SwarmSidebar";
+import { SwarmView, SwarmWelcome } from "./components/SwarmView";
 import { ChatView } from "./components/ChatView";
 import { Welcome } from "./components/Welcome";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -15,6 +17,9 @@ import { Toast } from "./components/Toast";
 export function App() {
   const booted = useStore((s) => s.booted);
   const currentId = useStore((s) => s.currentId);
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
+  const currentSwarmId = useStore((s) => s.currentSwarmId);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const mcpOpen = useStore((s) => s.mcpOpen);
   const updateOpen = useStore((s) => s.updateOpen);
@@ -44,17 +49,40 @@ export function App() {
   return (
     <div className="workbench">
       <nav className="activitybar" aria-label="Разделы">
-        <button className="activitybar__item activitybar__item--active" title="Сессии" onClick={closeSession}>
+        <button
+          className={`activitybar__item${view === "sessions" ? " activitybar__item--active" : ""}`}
+          title="Сессии"
+          onClick={() => {
+            if (view === "sessions") closeSession();
+            setView("sessions");
+          }}
+        >
           <MessagesSquare size={22} strokeWidth={1.5} />
+        </button>
+        <button className={`activitybar__item${view === "swarms" ? " activitybar__item--active" : ""}`} title="Рой агентов" onClick={() => setView("swarms")}>
+          <Network size={22} strokeWidth={1.5} />
         </button>
         <div className="activitybar__spacer" />
         <button className="activitybar__item" title="Настройки" onClick={() => setSettingsOpen(true)}>
           <Settings size={22} strokeWidth={1.5} />
         </button>
       </nav>
-      <Sidebar />
+      {view === "swarms" ? <SwarmSidebar /> : <Sidebar />}
       <main className="editor">
-        <div className="editor__main">{booted && (currentId ? <ChatView key={currentId} sessionId={currentId} /> : <Welcome />)}</div>
+        <div className="editor__main">
+          {booted &&
+            (view === "swarms" ? (
+              currentSwarmId ? (
+                <SwarmView key={currentSwarmId} />
+              ) : (
+                <SwarmWelcome />
+              )
+            ) : currentId ? (
+              <ChatView key={currentId} sessionId={currentId} />
+            ) : (
+              <Welcome />
+            ))}
+        </div>
         {terminalOpen && <TerminalPanel />}
       </main>
       <StatusBar />

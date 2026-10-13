@@ -7,6 +7,9 @@ import type {
   PermissionPrompt,
   ProviderId,
   SessionSummary,
+  SwarmDetail,
+  SwarmStartParams,
+  SwarmSummary,
   CheckpointPreview,
   McpListResult,
   UpdateStatus,
@@ -51,8 +54,14 @@ function loadTerminalHeight(): number {
 
 export const MODES: Mode[] = ["default", "acceptEdits", "plan"];
 
+export type View = "sessions" | "swarms";
+
 interface State {
   booted: boolean;
+  view: View;
+  swarms: SwarmSummary[];
+  currentSwarmId?: string;
+  swarm?: SwarmDetail;
   settings?: Settings;
   sessions: SessionSummary[];
   workspaces: Workspace[];
@@ -72,6 +81,12 @@ interface State {
   toast?: string;
 
   boot(): Promise<void>;
+  setView(view: View): void;
+  openSwarm(id: string): Promise<void>;
+  closeSwarm(): void;
+  startSwarm(params: SwarmStartParams): Promise<boolean>;
+  stopSwarm(): Promise<void>;
+  resumeSwarm(maxTokens?: number): Promise<void>;
   openSession(id: string): Promise<void>;
   closeSession(): void;
   startSession(path: string): Promise<void>;
@@ -204,8 +219,15 @@ export const useStore = create<State>((set, get) => {
       }
     });
 
+  const refreshSwarms = async () => {
+    const { swarms } = await bridge.call(Methods.SwarmList, {});
+    set({ swarms });
+  };
+
   return {
     booted: false,
+    view: "sessions" as View,
+    swarms: [],
     sessions: [],
     workspaces: [],
     chats: {},
@@ -220,6 +242,14 @@ export const useStore = create<State>((set, get) => {
       bridge.on(Notifications.AgentEvent, onEvent);
       bridge.on(Notifications.SessionsChanged, () => void refreshSessions().catch(fail));
       bridge.on(Notifications.McpChanged, (mcp) => set({ mcp }));
+      bridge.on(Notifications.SwarmChanged, (detail) =>
+        set((s) => ({
+          swarm: s.currentSwarmId === detail.summary.id ? detail : s.swarm,
+          swarms: s.swarms.some((x) => x.id === detail.summary.id)
+            ? s.swarms.map((x) => (x.id === detail.summary.id ? detail.summary : x))
+            : [detail.summary, ...s.swarms],
+        })),
+      );
       bridge.on(Notifications.UpdateChanged, (update) => set({ update }));
       bridge.on(Notifications.TerminalOutput, (o) => terminal.write(o.terminalId, o.data));
       bridge.on(Notifications.TerminalExited, (e) => {
@@ -231,15 +261,57 @@ export const useStore = create<State>((set, get) => {
         set({ settings });
         void bridge.call(Methods.McpList, {}).then((mcp) => set({ mcp })).catch(fail);
         void bridge.call(Methods.UpdateGet, {}).then((update) => set({ update })).catch(fail);
-        await Promise.all([refreshSessions(), refreshWorkspaces()]);
+        await Promise.all([refreshSessions(), refreshWorkspaces(), refreshSwarms()]);
       } catch (e) {
         fail(e);
       }
       set({ booted: true });
     },
 
+    setView: (view) => set({ view }),
+
+    async openSwarm(id) {
+      set({ view: "swarms", currentSwarmId: id, swarm: undefined });
+      try {
+        const swarm = await bridge.call(Methods.SwarmGet, { swarmId: id });
+        set((s) => (s.currentSwarmId === id ? { swarm } : {}));
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    closeSwarm: () => set({ currentSwarmId: undefined, swarm: undefined }),
+
+    async startSwarm(params) {
+      try {
+        const summary = await bridge.call(Methods.SwarmStart, params);
+        set((s) => ({ swarms: [summary, ...s.swarms.filter((x) => x.id !== summary.id)] }));
+        await get().openSwarm(summary.id);
+        return true;
+      } catch (e) {
+        fail(e);
+        return false;
+      }
+    },
+
+    async stopSwarm() {
+      const id = get().currentSwarmId;
+      if (id) await bridge.call(Methods.SwarmStop, { swarmId: id }).catch(fail);
+    },
+
+    async resumeSwarm(maxTokens) {
+      const id = get().currentSwarmId;
+      if (!id) return;
+      try {
+        const swarm = await bridge.call(Methods.SwarmResume, { swarmId: id, maxTokens });
+        set({ swarm });
+      } catch (e) {
+        fail(e);
+      }
+    },
+
     async openSession(id) {
-      set({ currentId: id });
+      set({ view: "sessions", currentId: id });
       try {
         const detail = await bridge.call(Methods.SessionOpen, { sessionId: id });
         const items: Item[] = detail.items.map((t) => {

@@ -6,7 +6,7 @@ namespace Kairo.Protocol;
 /// Every method the UI may call. Methods express user intent; there is deliberately no method that
 /// runs a command, reads or writes a file on the UI's behalf (see docs/SECURITY-MODEL.md).
 /// </summary>
-public static class Methods
+public static partial class Methods
 {
     public const string AppInfo = "app.info";
 
@@ -61,7 +61,7 @@ public static class Methods
     public const string McpImportDesktop = "mcp.importDesktop";
 }
 
-public static class Notifications
+public static partial class Notifications
 {
     /// <summary><see cref="AgentEventDto"/> for a running turn.</summary>
     public const string AgentEvent = "agent.event";
