@@ -95,6 +95,7 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
     {
         PermissionMode.AcceptEdits => "acceptEdits",
         PermissionMode.Plan => "plan",
+        PermissionMode.Bypass => "bypass",
         _ => "default",
     };
 

@@ -332,7 +332,10 @@ export const useStore = create<State>((set, get) => {
     async cycleMode() {
       const id = get().currentId;
       const chat = id ? get().chats[id] : undefined;
-      if (chat) await get().setMode(MODES[(MODES.indexOf(chat.mode) + 1) % MODES.length]);
+      if (!chat) return;
+      // "bypass" is in the cycle only when the user turned it on in settings.
+      const modes = get().settings?.mode === "bypass" || chat.mode === "bypass" ? [...MODES, "bypass" as Mode] : MODES;
+      await get().setMode(modes[(modes.indexOf(chat.mode) + 1) % modes.length]);
     },
 
     async respond(requestId, decision) {

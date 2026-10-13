@@ -32,7 +32,7 @@ internal sealed class CliOptions
           --base-url <url>           API endpoint: required for openai-compatible (e.g. http://localhost:11434/v1),
                                      optional for anthropic (Anthropic-format gateways)
           --effort <level>           low | medium | high | xhigh | max
-          --mode <mode>              default | acceptEdits | plan
+          --mode <mode>              default | acceptEdits | plan | bypass
           --allow "<rule>"           extra allow rule, e.g. "Shell(dotnet test:*)" (repeatable)
           --cwd <dir>                working directory
           --no-mcp                   do not connect MCP servers from %APPDATA%\Kairo\mcp.json

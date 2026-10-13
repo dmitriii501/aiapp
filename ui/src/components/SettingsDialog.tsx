@@ -159,7 +159,7 @@ export function SettingsDialog() {
           </Field>
 
           <h3 className="dialog__section">Разрешения</h3>
-          <Field label="Режим для новых сессий" hint="В открытой сессии режим меняется сочетанием Shift+Tab.">
+          <Field label="Режим для новых сессий" hint={mode === "bypass" ? "Агент выполняет всё без вопросов, включая команды Shell и запросы в сеть. Откатываются только правки файлов. Правила deny продолжают действовать. Shift+Tab переключает и на этот режим." : "В открытой сессии режим меняется сочетанием Shift+Tab."}>
             <select className="input" value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
               {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
                 <option key={m} value={m}>

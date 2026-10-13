@@ -17,6 +17,9 @@ public enum PermissionMode
 
     /// <summary>Read-only: anything above <see cref="RiskLevel.Read"/> is denied.</summary>
     Plan,
+
+    /// <summary>Nothing asks: every call runs unless a deny rule matches. For the user's own risk; see docs/SECURITY-MODEL.md.</summary>
+    Bypass,
 }
 
 /// <summary>
@@ -125,6 +128,9 @@ public sealed class PermissionEngine(PermissionRules rules, PermissionMode mode)
 
         if (Mode == PermissionMode.Plan && call.Risk != RiskLevel.Read)
             return new(PermissionDecision.Deny, "plan mode is read-only");
+
+        if (Mode == PermissionMode.Bypass)
+            return new(PermissionDecision.Allow, "bypass mode");
 
         if (Rules.Ask.FirstOrDefault(r => r.Matches(toolName, call, ctx)) is { } ask)
             return new(PermissionDecision.Ask, $"rule {ask}");

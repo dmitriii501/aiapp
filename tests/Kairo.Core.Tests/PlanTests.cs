@@ -82,6 +82,42 @@ public class PlanModeTests : IDisposable
     }
 
     [Fact]
+    public void Bypass_mode_runs_everything_except_what_a_deny_rule_forbids()
+    {
+        var ctx = new ToolContext(_dir.Path);
+        var shell = new ToolAssessment(RiskLevel.Exec, "git push", "Shell(git push)");
+        var env = new ToolAssessment(RiskLevel.Read, Path.Combine(_dir.Path, ".env"), "Read(.env)");
+        var outside = new ToolAssessment(RiskLevel.Write, @"C:\Windows\x.txt", "Write(x.txt)");
+        var rules = PermissionRules.WithDefaults();
+        rules.Deny.Add(PermissionRule.Parse("Shell(rm -rf:*)"));
+        var engine = new PermissionEngine(rules, PermissionMode.Bypass);
+
+        Assert.Equal(PermissionDecision.Allow, engine.Evaluate("Shell", shell, ctx).Decision);
+        Assert.Equal(PermissionDecision.Allow, engine.Evaluate("Read", env, ctx).Decision); // the .env prompt is skipped too
+        Assert.Equal(PermissionDecision.Allow, engine.Evaluate("Write", outside, ctx).Decision);
+        Assert.Equal(PermissionDecision.Allow, engine.Evaluate("WebFetch", new ToolAssessment(RiskLevel.Network, "example.com", "WebFetch(x)"), ctx).Decision);
+        Assert.Equal(PermissionDecision.Deny, engine.Evaluate("Shell", new ToolAssessment(RiskLevel.Exec, "rm -rf /", "Shell(rm)"), ctx).Decision);
+        Assert.Equal(PermissionDecision.Deny, engine.Evaluate("ExitPlanMode", Plan(), ctx).Decision); // there is no plan to approve
+    }
+
+    [Fact]
+    public void A_project_cannot_turn_bypass_on_but_the_user_can()
+    {
+        using var dir = new TempDir();
+        var user = Path.Combine(dir.Path, "user");
+        var project = Path.Combine(dir.Path, "project");
+        Directory.CreateDirectory(user);
+        Directory.CreateDirectory(Path.Combine(project, ".kairo"));
+        File.WriteAllText(Path.Combine(project, ".kairo", "config.toml"), "[permissions]\nmode = \"bypass\"\n");
+
+        Assert.Null(Kairo.Core.Config.KairoConfig.Load(project, user).Mode);
+
+        File.WriteAllText(Path.Combine(user, "config.toml"), "[permissions]\nmode = \"bypass\"\n");
+        Assert.Equal(PermissionMode.Bypass, Kairo.Core.Config.KairoConfig.Load(project, user).Mode);
+        Assert.Equal(PermissionMode.Bypass, Kairo.Core.Config.KairoConfig.ParseMode("bypass"));
+    }
+
+    [Fact]
     public void Always_allow_does_not_remember_plan_approvals()
     {
         var engine = Engine(PermissionMode.Plan);

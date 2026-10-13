@@ -41,7 +41,7 @@ export const Notifications = {
   TerminalExited: "terminal.exited",
 } as const;
 
-export type Mode = "default" | "acceptEdits" | "plan";
+export type Mode = "default" | "acceptEdits" | "plan" | "bypass";
 export type ProviderId = "anthropic" | "openai-compatible";
 export type Decision = "allow" | "always" | "deny";
 export type ToolStatus = "running" | "done" | "error" | "denied" | "interrupted";

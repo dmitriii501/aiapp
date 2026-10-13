@@ -1006,6 +1006,11 @@ select.input {
   color: var(--warn);
 }
 
+.hints__mode--bypass {
+  color: var(--error);
+  font-weight: 600;
+}
+
 .hints__key {
   color: var(--faint);
 }

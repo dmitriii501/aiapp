@@ -15,7 +15,7 @@ namespace Kairo.Core.Config;
 /// effort = "high"
 ///
 /// [permissions]
-/// mode = "default"           # default | acceptEdits | plan
+/// mode = "default"           # default | acceptEdits | plan | bypass (nothing asks; only deny rules apply)
 /// allow = ["Shell(git status)", "Shell(dotnet test:*)"]
 /// ask = ["Shell(git push:*)"]
 /// deny = ["Read(**/secrets/**)"]
@@ -92,9 +92,13 @@ public sealed class KairoConfig
         {
             // Updates replace the app itself: a repository must not be able to steer them.
             // Likewise the search backend: it receives what the agent searches for.
+            var userMode = config.Mode;
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
+            // A repository cannot switch off the user's confirmations.
+            if (config.Mode == PermissionMode.Bypass && userMode != PermissionMode.Bypass)
+                config.Mode = userMode;
         }
         return config;
     }
@@ -113,7 +117,8 @@ public sealed class KairoConfig
         "default" => PermissionMode.Default,
         "acceptedits" or "accept-edits" => PermissionMode.AcceptEdits,
         "plan" => PermissionMode.Plan,
-        _ => throw new FormatException($"Unknown permission mode '{value}'. Use default, acceptEdits or plan."),
+        "bypass" or "bypasspermissions" => PermissionMode.Bypass,
+        _ => throw new FormatException($"Unknown permission mode '{value}'. Use default, acceptEdits, plan or bypass."),
     };
 
     /// <summary>Read-modify-write of the user's config.toml; keys the update does not touch are kept.</summary>
