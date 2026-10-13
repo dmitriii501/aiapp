@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Kairo.Core.Agents;
+using Kairo.Core.Checkpoints;
 using Kairo.Core.Config;
 using Kairo.Core.Context;
 using Kairo.Core.Models;
@@ -43,6 +44,9 @@ public sealed class AgentHost(
         public PermissionEngine Permissions { get; } = permissions;
         public ToolContext Tools { get; } = tools;
         public CancellationTokenSource? Turn { get; set; }
+
+        /// <summary>Told to the model with the next prompt: the user rolled back some of its file changes.</summary>
+        public string? PendingNote { get; set; }
         public Lock Gate { get; } = new();
     }
 
@@ -74,7 +78,7 @@ public sealed class AgentHost(
             var config = LoadConfig(live.Info.WorkingDirectory);
             return new SessionDetail(
                 Summary(live.Info),
-                Transcript.Build(live.History, Tools(), live.Tools),
+                Transcript.Build(live.History, Tools(), live.Tools, store.Checkpoints.List(sessionId).ToDictionary(c => c.Turn)),
                 SettingsService.ModeName(live.Permissions.Mode),
                 ProviderFactory.ModelOf(config),
                 _pending.Values.Where(p => p.SessionId == sessionId).Select(p => p.Prompt).ToList());
@@ -111,6 +115,14 @@ public sealed class AgentHost(
             turn = live.Turn = new CancellationTokenSource();
         }
 
+        // Files the agent changes in this turn are saved first, so the user can roll them back.
+        var turnNumber = live.History.Count(Transcript.IsPrompt) + 1;
+        var recorder = new TurnRecorder(store.Checkpoints, sessionId, turnNumber);
+        recorder.Recorded += c => _ = _notify(new AgentEventDto(sessionId, "checkpoint", CheckpointId: c.Id, Files: c.Files));
+        live.Tools.History = recorder;
+        var note = live.PendingNote;
+        live.PendingNote = null;
+
         var agent = new Agent(
             provider,
             Tools(),
@@ -126,14 +138,14 @@ public sealed class AgentHost(
             lock (live.Gate)
                 live.History.Add(message);
             store.Append(sessionId, message);
-            if (live.Info.Title == NewSessionTitle && message.Role == ChatRole.User && message.Text is { Length: > 0 } first)
+            if (live.Info.Title == NewSessionTitle && Transcript.IsPrompt(message) && message.UserTypedText is { Length: > 0 } first)
             {
                 store.SetTitle(sessionId, TitleFrom(first));
                 live.Info = live.Info with { Title = TitleFrom(first) };
             }
         };
 
-        _ = Task.Run(() => RunTurnAsync(live, agent, text, turn, ProviderFactory.ProviderOf(config)));
+        _ = Task.Run(() => RunTurnAsync(live, agent, text, note, turn, ProviderFactory.ProviderOf(config)));
     }
 
     public void Cancel(string sessionId)
@@ -155,11 +167,52 @@ public sealed class AgentHost(
             throw new RpcException(RpcErrorCodes.InvalidParams, "Запрос уже обработан.");
     }
 
+    // ---- Checkpoints ----
+
+    public CheckpointPreviewResult PreviewCheckpoint(string checkpointId)
+    {
+        var (checkpoint, live) = FindCheckpoint(checkpointId);
+        var files = Rollback.Preview(store.Checkpoints, checkpoint)
+            .Select(f => new CheckpointFileDto(f.Path, live.Tools.DisplayPath(f.Path), f.Action.ToString().ToLowerInvariant(), f.Diff))
+            .ToList();
+        return new CheckpointPreviewResult(checkpointId, files);
+    }
+
+    public CheckpointRollbackResult RollbackCheckpoint(string checkpointId, IReadOnlyList<string> paths, bool overwriteConflicts)
+    {
+        var (checkpoint, live) = FindCheckpoint(checkpointId);
+        lock (live.Gate)
+        {
+            if (live.Turn is not null)
+                throw new RpcException(RpcErrorCodes.InvalidRequest, "Агент ещё работает в этой сессии. Остановите его, затем откатывайте изменения.");
+        }
+
+        var result = Rollback.Apply(store.Checkpoints, checkpoint, paths, overwriteConflicts);
+
+        // The model's earlier reads of these files are out of date now: make it read them again before editing.
+        foreach (var path in paths)
+            live.Tools.ReadFiles.Remove(Path.GetFullPath(path));
+        if (result.Restored + result.Deleted > 0)
+        {
+            live.PendingNote = "The user rolled back some of your file changes: "
+                + $"{result.Restored} file(s) restored to their earlier content and {result.Deleted} file(s) that you created were deleted "
+                + $"({string.Join(", ", paths.Select(p => live.Tools.DisplayPath(Path.GetFullPath(p))))}). "
+                + "Do not assume the contents you saw earlier. Read a file again before editing it.";
+        }
+        return new CheckpointRollbackResult(result.Restored, result.Deleted, result.Skipped.Select(p => live.Tools.DisplayPath(p)).ToList());
+    }
+
+    private (CheckpointInfo Checkpoint, LiveSession Live) FindCheckpoint(string checkpointId)
+    {
+        var checkpoint = store.Checkpoints.Get(checkpointId) ?? throw new RpcException(RpcErrorCodes.InvalidParams, "Точка отката не найдена.");
+        return (checkpoint, GetLive(checkpoint.SessionId));
+    }
+
     public bool IsRunning(string sessionId) => _live.TryGetValue(sessionId, out var live) && live.Turn is not null;
 
     // ---- Turn ----
 
-    private async Task RunTurnAsync(LiveSession live, Agent agent, string text, CancellationTokenSource turn, string providerId)
+    private async Task RunTurnAsync(LiveSession live, Agent agent, string text, string? note, CancellationTokenSource turn, string providerId)
     {
         var id = live.Info.Id;
         long input = 0, output = 0;
@@ -169,7 +222,7 @@ public sealed class AgentHost(
         await sessionsChanged().ConfigureAwait(false);
         try
         {
-            await foreach (var ev in agent.RunAsync(text, turn.Token).ConfigureAwait(false))
+            await foreach (var ev in agent.RunAsync(text, note, turn.Token).ConfigureAwait(false))
             {
                 switch (ev)
                 {

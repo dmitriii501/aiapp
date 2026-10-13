@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import type { Item } from "../store";
+import { useStore, type Item } from "../store";
 import type { ToolStatus } from "../bridge/protocol";
 import { DiffView, diffStats } from "./DiffView";
 import { Markdown } from "./Markdown";
@@ -18,7 +18,10 @@ const Row = memo(function Row({ item }: { item: Item }) {
       return (
         <div className="entry entry--user">
           <span className="entry__marker">&gt;</span>
-          <div className="entry__body">{item.text}</div>
+          <div className="entry__body">
+            {item.text}
+            {item.checkpointId && item.files ? <ChangedFiles checkpointId={item.checkpointId} files={item.files} /> : null}
+          </div>
         </div>
       );
     case "assistant":
@@ -45,6 +48,28 @@ const Row = memo(function Row({ item }: { item: Item }) {
       return null;
   }
 });
+
+function filesWord(n: number) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "файл";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "файла";
+  return "файлов";
+}
+
+/** Under a prompt: how many files the agent changed for it, and the way back. */
+function ChangedFiles({ checkpointId, files }: { checkpointId: string; files: number }) {
+  const running = useStore((s) => (s.currentId ? s.chats[s.currentId]?.running : false));
+  const openRollback = useStore((s) => s.openRollback);
+  return (
+    <div className="entry__changes">
+      Изменено {files} {filesWord(files)}
+      <button className="entry__rollback" disabled={running} title={running ? "Дождитесь конца ответа" : undefined} onClick={() => void openRollback(checkpointId)}>
+        Откатить…
+      </button>
+    </div>
+  );
+}
 
 type RowStatus = ToolStatus | "waiting";
 

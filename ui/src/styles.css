@@ -1287,6 +1287,93 @@ select.input {
   font-size: 12px;
 }
 
+/* ---------- Rollback ---------- */
+
+.entry__changes {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entry__rollback {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.entry__rollback:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.entry__rollback:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.rollback__lead {
+  margin: 10px 0 12px;
+}
+
+.rollback__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+}
+
+.rollback__row {
+  padding: 6px 10px;
+}
+
+.rollback__row + .rollback__row {
+  border-top: 1px solid var(--border);
+}
+
+.rollback__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.rollback__path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rollback__action {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rollback__action--conflict {
+  color: var(--warn);
+}
+
+.rollback__action--unavailable {
+  color: var(--error);
+}
+
+.rollback__warning {
+  margin: 2px 0 2px 24px;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.rollback__row .diff {
+  margin: 6px 0 2px 24px;
+}
+
 /* ---------- Update ---------- */
 
 .update__versions {

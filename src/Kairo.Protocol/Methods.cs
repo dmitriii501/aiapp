@@ -28,6 +28,11 @@ public static class Methods
 
     public const string PermissionRespond = "permission.respond";
 
+    /// <summary>What rolling back a prompt's file changes would do. Changes nothing.</summary>
+    public const string CheckpointPreview = "checkpoint.preview";
+    /// <summary>Rolls back the chosen files to how they were before a prompt. The user confirmed the list in the preview.</summary>
+    public const string CheckpointRollback = "checkpoint.rollback";
+
     /// <summary>
     /// Terminals are the one place where the UI's input reaches a shell. It is the user typing, not the agent: the host picks
     /// the shell and the folder (a known workspace), the UI only sends keystrokes. Agent tool calls never go through here.
@@ -140,7 +145,9 @@ public sealed record TranscriptItem(
     string? Summary = null,
     string? Output = null,
     string? Status = null,
-    string? Diff = null);
+    string? Diff = null,
+    string? CheckpointId = null,
+    int? Files = null);
 
 public sealed record SessionDetail(
     SessionSummary Session,
@@ -182,7 +189,9 @@ public sealed record AgentEventDto(
     string? Reason = null,
     long? InputTokens = null,
     long? OutputTokens = null,
-    string? Diff = null);
+    string? Diff = null,
+    string? CheckpointId = null,
+    int? Files = null);
 
 // ---- MCP ----
 
@@ -222,3 +231,16 @@ public sealed record TerminalExited(string TerminalId, int ExitCode);
 /// Version and Notes describe the offered update; Progress is 0-100 while downloading.
 /// </summary>
 public sealed record UpdateStatus(string State, string CurrentVersion, string? Version = null, string? Notes = null, int? Progress = null, string? Error = null);
+
+// ---- Checkpoints ----
+
+/// <summary>Action: restore | delete | conflict | unchanged | unavailable. Path is the full path; DisplayPath is for showing.</summary>
+public sealed record CheckpointFileDto(string Path, string DisplayPath, string Action, string? Diff);
+
+public sealed record CheckpointRef(string CheckpointId);
+
+public sealed record CheckpointPreviewResult(string CheckpointId, IReadOnlyList<CheckpointFileDto> Files);
+
+public sealed record CheckpointRollbackParams(string CheckpointId, IReadOnlyList<string> Paths, bool OverwriteConflicts);
+
+public sealed record CheckpointRollbackResult(int Restored, int Deleted, IReadOnlyList<string> Skipped);

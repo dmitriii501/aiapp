@@ -20,6 +20,8 @@ export const Methods = {
   McpSetEnabled: "mcp.setEnabled",
   McpReload: "mcp.reload",
   McpImportDesktop: "mcp.importDesktop",
+  CheckpointPreview: "checkpoint.preview",
+  CheckpointRollback: "checkpoint.rollback",
   UpdateGet: "update.get",
   UpdateCheck: "update.check",
   UpdateInstall: "update.install",
@@ -102,6 +104,9 @@ export interface TranscriptItem {
   status?: ToolStatus;
   /** Unified diff (hunks only) of what a write or edit changed. */
   diff?: string;
+  /** On a user prompt: the checkpoint holding the files the agent changed while answering it. */
+  checkpointId?: string;
+  files?: number;
 }
 
 export interface PermissionPrompt {
@@ -130,6 +135,7 @@ export type AgentEventType =
   | "tool_finished"
   | "permission"
   | "permission_resolved"
+  | "checkpoint"
   | "error"
   | "turn_finished";
 
@@ -148,6 +154,29 @@ export interface AgentEvent {
   inputTokens?: number;
   outputTokens?: number;
   diff?: string;
+  checkpointId?: string;
+  files?: number;
+}
+
+export type RollbackAction = "restore" | "delete" | "conflict" | "unchanged" | "unavailable";
+
+export interface CheckpointFile {
+  path: string;
+  displayPath: string;
+  action: RollbackAction;
+  /** From how the file is now to how a rollback leaves it. */
+  diff?: string;
+}
+
+export interface CheckpointPreview {
+  checkpointId: string;
+  files: CheckpointFile[];
+}
+
+export interface CheckpointRollbackResult {
+  restored: number;
+  deleted: number;
+  skipped: string[];
 }
 
 export type UpdateState = "disabled" | "idle" | "checking" | "available" | "downloading" | "error";
@@ -208,6 +237,8 @@ export interface MethodMap {
   [Methods.McpSetEnabled]: { params: { name: string; enabled: boolean }; result: McpListResult };
   [Methods.McpReload]: { params: NoParams; result: McpListResult };
   [Methods.McpImportDesktop]: { params: NoParams; result: McpListResult };
+  [Methods.CheckpointPreview]: { params: { checkpointId: string }; result: CheckpointPreview };
+  [Methods.CheckpointRollback]: { params: { checkpointId: string; paths: string[]; overwriteConflicts: boolean }; result: CheckpointRollbackResult };
   [Methods.UpdateGet]: { params: NoParams; result: UpdateStatus };
   [Methods.UpdateCheck]: { params: NoParams; result: UpdateStatus };
   [Methods.UpdateInstall]: { params: NoParams; result: Ok };

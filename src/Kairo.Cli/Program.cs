@@ -184,7 +184,7 @@ async Task<bool> RunTurnAsync(string text, CancellationToken ct)
 {
     try
     {
-        await foreach (var ev in agent.RunAsync(text, ct))
+        await foreach (var ev in agent.RunAsync(text, ct: ct))
             ui.Render(ev);
         ui.PrintUsage(model);
         return true;

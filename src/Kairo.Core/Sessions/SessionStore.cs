@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Kairo.Core.Checkpoints;
 using Kairo.Core.Models;
 using Microsoft.Data.Sqlite;
 
@@ -22,6 +23,9 @@ public sealed class SessionStore : IDisposable
 {
     private readonly SqliteConnection _db;
     private readonly Lock _lock = new();
+
+    /// <summary>Snapshots of files the agent changed, for rolling back.</summary>
+    public CheckpointStore Checkpoints { get; }
 
     public SessionStore(string databasePath)
     {
@@ -50,6 +54,8 @@ public sealed class SessionStore : IDisposable
                 last_used   TEXT NOT NULL
             );
             """);
+        Execute(CheckpointStore.Schema);
+        Checkpoints = new CheckpointStore(_db, _lock);
     }
 
     public static string DefaultPath =>

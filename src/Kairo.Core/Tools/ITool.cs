@@ -37,10 +37,20 @@ public interface ITool
     string? Preview(JsonElement input, ToolContext ctx) => null;
 }
 
+/// <summary>Lets file-changing tools save a file's previous state so the user can roll the change back.</summary>
+public interface IFileHistory
+{
+    /// <summary>Call before changing <paramref name="path"/>; dispose once the change is written.</summary>
+    IDisposable Track(string path);
+}
+
 /// <summary>Per-session state shared by tools.</summary>
 public sealed class ToolContext(string workingDirectory)
 {
     public string WorkingDirectory { get; } = Path.GetFullPath(workingDirectory);
+
+    /// <summary>Set by the host for each turn; null when nobody keeps checkpoints (the CLI).</summary>
+    public IFileHistory? History { get; set; }
 
     /// <summary>Files read in this session. Write/Edit refuse to overwrite a file the agent has not seen.</summary>
     public HashSet<string> ReadFiles { get; } = new(StringComparer.OrdinalIgnoreCase);

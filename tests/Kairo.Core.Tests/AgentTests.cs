@@ -21,7 +21,7 @@ public class AgentTests : IDisposable
     private static async Task<List<AgentEvent>> Run(Agent agent, string text, CancellationToken ct = default)
     {
         var events = new List<AgentEvent>();
-        await foreach (var e in agent.RunAsync(text, ct))
+        await foreach (var e in agent.RunAsync(text, ct: ct))
             events.Add(e);
         return events;
     }

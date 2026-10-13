@@ -69,9 +69,12 @@ public sealed class Agent(
     /// <summary>Raised for every message added to the history, e.g. to persist the session.</summary>
     public event Action<ChatMessage>? MessageAppended;
 
-    public async IAsyncEnumerable<AgentEvent> RunAsync(string userText, [EnumeratorCancellation] CancellationToken ct = default)
+    /// <param name="note">Context from Kairo (not from the user), sent with the prompt and hidden in the transcript.</param>
+    public async IAsyncEnumerable<AgentEvent> RunAsync(string userText, string? note = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        Append(ChatMessage.UserText(userText));
+        Append(note is { Length: > 0 }
+            ? new ChatMessage(ChatRole.User, [new TextPart(ChatMessage.NoteOpen + note + ChatMessage.NoteClose + "\n\n"), new TextPart(userText)])
+            : ChatMessage.UserText(userText));
 
         for (var call = 0; call < options.MaxModelCalls; call++)
         {

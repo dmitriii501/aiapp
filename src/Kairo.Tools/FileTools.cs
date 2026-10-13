@@ -102,7 +102,8 @@ public sealed class WriteTool : ITool
 
         var before = File.Exists(path) ? TextFiles.ReadText(path) : "";
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllTextAsync(path, content, new UTF8Encoding(false), ct).ConfigureAwait(false);
+        using (ctx.History?.Track(path))
+            await File.WriteAllTextAsync(path, content, new UTF8Encoding(false), ct).ConfigureAwait(false);
         ctx.ReadFiles.Add(path);
         return new ToolResult($"Wrote {content.Split('\n').Length} lines to {ctx.DisplayPath(path)}.", Diff: UnifiedDiff.Create(before, content));
     }
@@ -163,7 +164,8 @@ public sealed class EditTool : ITool
         if (plan.Error is { } error)
             return ToolResult.Error(error);
 
-        await File.WriteAllTextAsync(path, plan.Updated!, new UTF8Encoding(false), ct).ConfigureAwait(false);
+        using (ctx.History?.Track(path))
+            await File.WriteAllTextAsync(path, plan.Updated!, new UTF8Encoding(false), ct).ConfigureAwait(false);
         return new ToolResult(
             $"Edited {ctx.DisplayPath(path)} ({(replaceAll ? plan.Count : 1)} replacement{(replaceAll && plan.Count > 1 ? "s" : "")}).",
             Diff: UnifiedDiff.Create(text, plan.Updated!));

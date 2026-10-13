@@ -104,6 +104,8 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       diff: denied ? undefined : diff,
     });
 
+    if (!denied) event({ sessionId: id, type: "checkpoint", checkpointId: "cp1", files: 2 });
+
     const answer = denied
       ? "Хорошо, файл не трогаю. Могу предложить изменение текстом."
       : "Готово. Изменил **src/Program.cs**:\n\n```csharp\nConsole.WriteLine(\"Hello, Kairo\");\n```\n\n| Файл | Изменение |\n|---|---|\n| `src/Program.cs` | строка 3 |";
@@ -160,6 +162,22 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
         waiting.get(p.requestId)?.(p.decision);
         waiting.delete(p.requestId);
         return { success: true };
+      case Methods.CheckpointPreview:
+        return {
+          checkpointId: p.checkpointId,
+          files: [
+            {
+              path: "C:\\Users\\dev\\projects\\kairo\\src\\Program.cs",
+              displayPath: "src/Program.cs",
+              action: "restore",
+              diff: "@@ -5,6 +5,4 @@\n internal static class Program\n {\n-    private static void Main()\n-    {\n-        Console.WriteLine(\"Hello, Kairo\");\n-    }\n+    private static void Main() => Console.WriteLine(\"Hello, world\");\n }",
+            },
+            { path: "C:\\Users\\dev\\projects\\kairo\\notes.md", displayPath: "notes.md", action: "delete", diff: "@@ -1,2 +0,0 @@\n-# Заметки\n-Черновик" },
+            { path: "C:\\Users\\dev\\projects\\kairo\\config.json", displayPath: "config.json", action: "conflict", diff: "@@ -1,1 +1,1 @@\n-{\"debug\": true}\n+{\"debug\": false}" },
+          ],
+        };
+      case Methods.CheckpointRollback:
+        return { restored: 1, deleted: 1, skipped: [] };
       case Methods.UpdateGet:
       case Methods.UpdateCheck:
         return updateStatus;

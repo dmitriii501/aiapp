@@ -208,6 +208,72 @@ public class HostTests : IDisposable
         Assert.Contains(expected, text);
     }
 
+    [Fact]
+    public async Task File_changes_get_a_checkpoint_that_can_be_previewed_and_rolled_back()
+    {
+        File.WriteAllText(Path.Combine(_project, "keep.txt"), "before");
+        _model = new ScriptedProvider(
+            Call("c1", "Write", """{"file_path":"made.txt","content":"new"}"""),
+            Say("Готово."),
+            Say("Понял."));
+        var host = CreateHost();
+        var id = NewSession(host);
+        host.SetMode(id, "acceptEdits");
+
+        host.Send(id, "создай файл");
+        await WaitFor("turn_finished");
+
+        var announced = _events.Single(e => e.Type == "checkpoint");
+        Assert.Equal(1, announced.Files);
+        var prompt = host.Open(id).Items.Single(i => i.Kind == "user");
+        Assert.Equal((announced.CheckpointId, 1), (prompt.CheckpointId, prompt.Files));
+
+        var preview = host.PreviewCheckpoint(announced.CheckpointId!);
+        var file = Assert.Single(preview.Files);
+        Assert.Equal(("made.txt", "delete"), (file.DisplayPath, file.Action));
+
+        // Paths that are not part of the checkpoint are ignored, whatever the UI sends.
+        var outside = Path.Combine(_project, "keep.txt");
+        var result = host.RollbackCheckpoint(announced.CheckpointId!, [file.Path, outside], overwriteConflicts: false);
+
+        Assert.Equal((0, 1), (result.Restored, result.Deleted));
+        Assert.False(File.Exists(Path.Combine(_project, "made.txt")));
+        Assert.Equal("before", File.ReadAllText(outside));
+
+        // The next prompt tells the model about the rollback; the user's transcript does not show that note.
+        _events.Clear();
+        host.Send(id, "что дальше?");
+        await WaitFor("turn_finished");
+        var stored = _store.LoadMessages(id).Where(Transcript.IsPrompt).Last();
+        Assert.Contains("rolled back", stored.Text);
+        Assert.Equal("что дальше?", stored.UserTypedText);
+        Assert.Equal("что дальше?", host.Open(id).Items.Last(i => i.Kind == "user").Text);
+    }
+
+    [Fact]
+    public async Task Rolling_back_is_refused_while_the_agent_is_working()
+    {
+        _model = new ScriptedProvider(
+            Call("c1", "Write", """{"file_path":"a.txt","content":"1"}"""), Say("ok"),
+            Call("c2", "Write", """{"file_path":"b.txt","content":"2"}"""));
+        var host = CreateHost();
+        var id = NewSession(host);
+        host.SetMode(id, "acceptEdits");
+        host.Send(id, "первый");
+        await WaitFor("turn_finished");
+        var checkpoint = _events.Single(e => e.Type == "checkpoint").CheckpointId!;
+
+        host.SetMode(id, "default");
+        host.Send(id, "второй"); // now waits for approval of the write
+        await WaitFor("permission");
+
+        var ex = Assert.Throws<RpcException>(() => host.RollbackCheckpoint(checkpoint, [Path.Combine(_project, "a.txt")], false));
+        Assert.Contains("ещё работает", ex.Message);
+        Assert.Throws<RpcException>(() => host.PreviewCheckpoint("missing"));
+        host.Cancel(id);
+        await Task.Delay(50);
+    }
+
     private sealed class EnvVar : IDisposable
     {
         private readonly string _name;

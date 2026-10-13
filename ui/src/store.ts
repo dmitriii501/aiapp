@@ -7,6 +7,7 @@ import type {
   PermissionPrompt,
   ProviderId,
   SessionSummary,
+  CheckpointPreview,
   McpListResult,
   UpdateStatus,
   Settings,
@@ -18,7 +19,7 @@ import { Methods, Notifications } from "./bridge/protocol";
 import * as terminal from "./terminal/registry";
 
 export type Item =
-  | { id: string; kind: "user"; text: string }
+  | { id: string; kind: "user"; text: string; checkpointId?: string; files?: number }
   | { id: string; kind: "assistant"; text: string; streaming: boolean }
   | { id: string; kind: "tool"; toolCallId: string; tool: string; summary: string; output?: string; diff?: string; status: ToolStatus | "waiting" }
   | { id: string; kind: "permission"; prompt: PermissionPrompt }
@@ -61,6 +62,8 @@ interface State {
   mcpOpen: boolean;
   update?: UpdateStatus;
   updateOpen: boolean;
+  /** The rollback dialog: what rolling back one prompt's file changes would do. */
+  rollback?: CheckpointPreview;
   terminalOpen: boolean;
   terminals: { id: string; title: string; exited: boolean }[];
   activeTerminalId?: string;
@@ -80,6 +83,9 @@ interface State {
   saveSettings(update: SettingsUpdate, key?: { provider: ProviderId; key: string }): Promise<boolean>;
   setSettingsOpen(open: boolean): void;
   setMcpOpen(open: boolean): void;
+  openRollback(checkpointId: string): Promise<void>;
+  closeRollback(): void;
+  applyRollback(paths: string[], overwriteConflicts: boolean): Promise<void>;
   setUpdateOpen(open: boolean): void;
   checkUpdate(): Promise<void>;
   installUpdate(): Promise<void>;
@@ -139,6 +145,12 @@ export const useStore = create<State>((set, get) => {
             ...chat,
             items: items.map((i) => (i.kind === "tool" && i.toolCallId === e.toolCallId ? { ...i, status: e.status ?? "done", output: e.output, diff: e.diff } : i)),
           };
+        case "checkpoint": {
+          // The files this prompt changed: shown under the prompt, updated as more files are changed.
+          const at = items.findLastIndex((i) => i.kind === "user");
+          if (at >= 0) items[at] = { ...(items[at] as Extract<Item, { kind: "user" }>), checkpointId: e.checkpointId, files: e.files };
+          return { ...chat, items };
+        }
         case "permission":
           endStreaming();
           items.push({ id: nextId(), kind: "permission", prompt: e.permission! });
@@ -210,7 +222,7 @@ export const useStore = create<State>((set, get) => {
         const items: Item[] = detail.items.map((t) => {
           switch (t.kind) {
             case "user":
-              return { id: nextId(), kind: "user", text: t.text ?? "" };
+              return { id: nextId(), kind: "user", text: t.text ?? "", checkpointId: t.checkpointId, files: t.files };
             case "assistant":
               return { id: nextId(), kind: "assistant", text: t.text ?? "", streaming: false };
             case "tool":
@@ -306,6 +318,31 @@ export const useStore = create<State>((set, get) => {
 
     setSettingsOpen: (open) => set({ settingsOpen: open }),
     setMcpOpen: (open) => set({ mcpOpen: open }),
+
+    async openRollback(checkpointId) {
+      try {
+        set({ rollback: await bridge.call(Methods.CheckpointPreview, { checkpointId }) });
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    closeRollback: () => set({ rollback: undefined }),
+
+    async applyRollback(paths, overwriteConflicts) {
+      const preview = get().rollback;
+      const id = get().currentId;
+      if (!preview) return;
+      try {
+        const result = await bridge.call(Methods.CheckpointRollback, { checkpointId: preview.checkpointId, paths, overwriteConflicts });
+        set({ rollback: undefined });
+        const parts = [`восстановлено файлов: ${result.restored}`, `удалено: ${result.deleted}`];
+        if (result.skipped.length > 0) parts.push(`пропущено: ${result.skipped.length}`);
+        if (id) patchChat(id, (chat) => ({ ...chat, items: [...chat.items, { id: nextId(), kind: "notice", text: `Откат: ${parts.join(", ")}` }] }));
+      } catch (e) {
+        fail(e);
+      }
+    },
 
     setUpdateOpen: (open) => set({ updateOpen: open }),
 

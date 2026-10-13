@@ -63,6 +63,10 @@ public static class HostMethods
             return Task.FromResult(new Ok());
         });
 
+        rpc.Register(Methods.CheckpointPreview, ctx.CheckpointRef, ctx.CheckpointPreviewResult, (p, _) => Task.FromResult(host.PreviewCheckpoint(p.CheckpointId)));
+        rpc.Register(Methods.CheckpointRollback, ctx.CheckpointRollbackParams, ctx.CheckpointRollbackResult,
+            (p, _) => Task.FromResult(host.RollbackCheckpoint(p.CheckpointId, p.Paths, p.OverwriteConflicts)));
+
         rpc.Register(Methods.UpdateGet, ctx.Empty, ctx.UpdateStatus, (_, _) => Task.FromResult(updates.Status));
         rpc.Register(Methods.UpdateCheck, ctx.Empty, ctx.UpdateStatus, async (_, _) => await updates.CheckAsync().ConfigureAwait(false));
         rpc.Register(Methods.UpdateInstall, ctx.Empty, ctx.Ok, (_, _) =>

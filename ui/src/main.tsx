@@ -26,6 +26,16 @@ if (bridge.kind === "mock" && location.hash === "#settings") {
 if (bridge.kind === "mock" && location.hash.startsWith("#demo")) {
   setTimeout(async () => {
     const store = useStore.getState();
+    if (location.hash === "#demo-rollback") {
+      // Finish the turn, then open the rollback dialog for the prompt that changed files.
+      useStore.subscribe((state) => {
+        const chat = state.currentId ? state.chats[state.currentId] : undefined;
+        const ask = chat?.items.find((i) => i.kind === "permission");
+        if (ask?.kind === "permission") void state.respond(ask.prompt.requestId, "allow");
+        const prompt = chat?.items.find((i) => i.kind === "user");
+        if (chat && !chat.running && prompt?.kind === "user" && prompt.checkpointId && !state.rollback) void state.openRollback(prompt.checkpointId);
+      });
+    }
     if (location.hash === "#demo-done") {
       useStore.subscribe((state) => {
         const chat = state.currentId ? state.chats[state.currentId] : undefined;
