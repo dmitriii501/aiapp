@@ -125,7 +125,11 @@ public sealed partial class MainWindow : Window
 
     private async Task InitializeWebViewAsync()
     {
-        await Web.EnsureCoreWebView2Async();
+        // The browser profile lives in the user's local data, not next to the exe: the install folder is replaced on every update
+        // and may not be writable.
+        var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kairo", "WebView2");
+        var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, new CoreWebView2EnvironmentOptions());
+        await Web.EnsureCoreWebView2Async(environment);
         var core = Web.CoreWebView2;
 
         var settings = core.Settings;
