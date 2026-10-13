@@ -2,6 +2,7 @@ using Kairo.Core.Config;
 using Kairo.Core.Rpc;
 using Kairo.Core.Sessions;
 using Kairo.Host;
+using Kairo.Mcp;
 using Kairo.Protocol;
 using Kairo.Windows;
 using Microsoft.UI.Xaml;
@@ -39,14 +40,25 @@ public sealed partial class MainWindow : Window
         _store = new SessionStore(SessionStore.DefaultPath);
         var settings = new SettingsService(KairoConfig.UserConfigDirectory, new CredentialStore());
         var ctx = ProtocolJsonContext.Default;
+        var mcpConfig = new McpConfigStore(McpConfigStore.DefaultPath);
+        var mcpManager = new McpManager(mcpConfig);
         var host = new AgentHost(
             _store,
             settings,
             notify: ev => _rpc.NotifyAsync(Notifications.AgentEvent, ev, ctx.AgentEventDto),
-            sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty));
-        HostMethods.Register(_rpc, host, settings, _store, PickFolderAsync, hostName: "desktop");
+            sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty),
+            mcp: mcpManager);
+        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), PickFolderAsync, hostName: "desktop");
 
-        Closed += (_, _) => _store.Dispose();
+        // Servers connect in the background; the window does not wait for them.
+        _ = mcpManager.ReloadAsync();
+
+        Closed += (_, _) =>
+        {
+            // Stops stdio servers so they do not outlive the window.
+            mcpManager.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
+            _store.Dispose();
+        };
 
         _ = InitializeWebViewAsync();
     }

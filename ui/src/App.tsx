@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { Welcome } from "./components/Welcome";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { McpDialog } from "./components/McpDialog";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 
@@ -12,6 +13,7 @@ export function App() {
   const booted = useStore((s) => s.booted);
   const currentId = useStore((s) => s.currentId);
   const settingsOpen = useStore((s) => s.settingsOpen);
+  const mcpOpen = useStore((s) => s.mcpOpen);
   const boot = useStore((s) => s.boot);
   const closeSession = useStore((s) => s.closeSession);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
@@ -35,6 +37,7 @@ export function App() {
       <main className="editor">{booted && (currentId ? <ChatView key={currentId} sessionId={currentId} /> : <Welcome />)}</main>
       <StatusBar />
       {settingsOpen && <SettingsDialog />}
+      {mcpOpen && <McpDialog />}
       <Toast />
     </div>
   );

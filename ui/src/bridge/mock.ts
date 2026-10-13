@@ -1,5 +1,5 @@
 import type { RpcMessage } from "./bridge";
-import type { AgentEvent, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, Workspace } from "./protocol";
+import type { AgentEvent, McpListResult, McpServerInfo, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, Workspace } from "./protocol";
 import { Methods, Notifications } from "./protocol";
 
 // In-memory stand-in for the core, so the UI can be developed with `npm run dev` in a browser.
@@ -19,6 +19,12 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
   const workspaces: Workspace[] = [{ path: "C:\\Users\\dev\\projects\\kairo", name: "kairo" }];
   const sessions = new Map<string, { summary: SessionSummary; items: TranscriptItem[]; mode: Mode }>();
   const waiting = new Map<string, (decision: string) => void>();
+  const mcpServers: McpServerInfo[] = [
+    { name: "filesystem", transport: "stdio", status: "ready", tools: ["read_file", "write_file", "list_directory", "search_files"] },
+    { name: "github", transport: "http", status: "ready", tools: ["create_issue", "list_pull_requests", "get_file_contents"] },
+    { name: "postgres", transport: "stdio", status: "failed", error: "spawn psql-mcp ENOENT", tools: [] },
+  ];
+  const mcpList = (imported?: string[]): McpListResult => ({ servers: mcpServers.map((s) => ({ ...s })), configPath: "C:\\Users\\dev\\AppData\\Roaming\\Kairo\\mcp.json", imported });
 
   const notify = (method: string, params: unknown) => reply({ jsonrpc: "2.0", method, params });
   const event = (e: AgentEvent) => notify(Notifications.AgentEvent, e);
@@ -135,6 +141,24 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
         waiting.get(p.requestId)?.(p.decision);
         waiting.delete(p.requestId);
         return { success: true };
+      case Methods.McpList:
+      case Methods.McpReload:
+        return mcpList();
+      case Methods.McpAdd: {
+        if (mcpServers.some((s) => s.name === p.name)) throw new Error(`Сервер «${p.name}» уже есть. Удалите его или выберите другое имя.`);
+        mcpServers.push({ name: p.name, transport: p.url ? "http" : "stdio", status: "ready", tools: ["example_tool"] });
+        return mcpList();
+      }
+      case Methods.McpRemove:
+        mcpServers.splice(mcpServers.findIndex((s) => s.name === p.name), 1);
+        return mcpList();
+      case Methods.McpSetEnabled: {
+        const server = mcpServers.find((s) => s.name === p.name)!;
+        server.status = (p as unknown as { enabled: boolean }).enabled ? "ready" : "disabled";
+        return mcpList();
+      }
+      case Methods.McpImportDesktop:
+        return mcpList([]);
       default:
         throw new Error(`Method '${m.method}' not found.`);
     }

@@ -7,6 +7,7 @@ using Kairo.Core.Permissions;
 using Kairo.Core.Rpc;
 using Kairo.Core.Sessions;
 using Kairo.Core.Tools;
+using Kairo.Mcp;
 using Kairo.Protocol;
 using Kairo.Tools;
 
@@ -22,15 +23,18 @@ public sealed class AgentHost(
     SettingsService settings,
     Func<AgentEventDto, Task> notify,
     Func<Task> sessionsChanged,
-    Func<KairoConfig, IModelProvider>? createProvider = null)
+    Func<KairoConfig, IModelProvider>? createProvider = null,
+    McpManager? mcp = null)
 {
     public const string NewSessionTitle = "Новая сессия";
 
     private readonly Func<AgentEventDto, Task> _notify = notify;
-    private readonly ToolRegistry _tools = new(BuiltinTools.All());
     private readonly ConcurrentDictionary<string, LiveSession> _live = new();
     private readonly ConcurrentDictionary<string, PendingPermission> _pending = new();
     private readonly Func<KairoConfig, IModelProvider> _createProvider = createProvider ?? (c => ProviderFactory.Create(c, settings.Secrets));
+
+    /// <summary>Built-in tools plus whatever MCP servers are connected right now.</summary>
+    private ToolRegistry Tools() => new(BuiltinTools.All().Concat(mcp?.Tools ?? []));
 
     private sealed class LiveSession(SessionInfo info, List<ChatMessage> history, PermissionEngine permissions, ToolContext tools)
     {
@@ -67,7 +71,7 @@ public sealed class AgentHost(
             var config = LoadConfig(live.Info.WorkingDirectory);
             return new SessionDetail(
                 Summary(live.Info),
-                Transcript.Build(live.History, _tools, live.Tools),
+                Transcript.Build(live.History, Tools(), live.Tools),
                 SettingsService.ModeName(live.Permissions.Mode),
                 ProviderFactory.ModelOf(config),
                 _pending.Values.Where(p => p.SessionId == sessionId).Select(p => p.Prompt).ToList());
@@ -106,7 +110,7 @@ public sealed class AgentHost(
 
         var agent = new Agent(
             provider,
-            _tools,
+            Tools(),
             live.Permissions,
             new Prompt(this, sessionId, live.Tools),
             live.Tools,

@@ -14,11 +14,18 @@ export const Methods = {
   SessionCancel: "session.cancel",
   SessionSetMode: "session.setMode",
   PermissionRespond: "permission.respond",
+  McpList: "mcp.list",
+  McpAdd: "mcp.add",
+  McpRemove: "mcp.remove",
+  McpSetEnabled: "mcp.setEnabled",
+  McpReload: "mcp.reload",
+  McpImportDesktop: "mcp.importDesktop",
 } as const;
 
 export const Notifications = {
   AgentEvent: "agent.event",
   SessionsChanged: "sessions.changed",
+  McpChanged: "mcp.changed",
 } as const;
 
 export type Mode = "default" | "acceptEdits" | "plan";
@@ -133,6 +140,23 @@ export interface AgentEvent {
   diff?: string;
 }
 
+export type McpStatus = "connecting" | "ready" | "failed" | "disabled";
+
+export interface McpServerInfo {
+  name: string;
+  transport: "stdio" | "http" | "file";
+  status: McpStatus;
+  error?: string;
+  tools: string[];
+}
+
+export interface McpListResult {
+  servers: McpServerInfo[];
+  configPath: string;
+  /** Names added by mcp.importDesktop. */
+  imported?: string[];
+}
+
 type NoParams = Record<string, never>;
 
 export interface MethodMap {
@@ -149,9 +173,16 @@ export interface MethodMap {
   [Methods.SessionCancel]: { params: { sessionId: string }; result: Ok };
   [Methods.SessionSetMode]: { params: { sessionId: string; mode: Mode }; result: Ok };
   [Methods.PermissionRespond]: { params: { requestId: string; decision: Decision }; result: Ok };
+  [Methods.McpList]: { params: NoParams; result: McpListResult };
+  [Methods.McpAdd]: { params: { name: string; command?: string; url?: string }; result: McpListResult };
+  [Methods.McpRemove]: { params: { name: string }; result: McpListResult };
+  [Methods.McpSetEnabled]: { params: { name: string; enabled: boolean }; result: McpListResult };
+  [Methods.McpReload]: { params: NoParams; result: McpListResult };
+  [Methods.McpImportDesktop]: { params: NoParams; result: McpListResult };
 }
 
 export interface NotificationMap {
   [Notifications.AgentEvent]: AgentEvent;
   [Notifications.SessionsChanged]: NoParams;
+  [Notifications.McpChanged]: McpListResult;
 }

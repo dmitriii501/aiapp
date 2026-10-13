@@ -27,6 +27,16 @@ public static class Methods
     public const string SessionSetMode = "session.setMode";
 
     public const string PermissionRespond = "permission.respond";
+
+    public const string McpList = "mcp.list";
+    /// <summary>Adds a server to mcp.json. The UI sends what the user typed; the host validates it.</summary>
+    public const string McpAdd = "mcp.add";
+    public const string McpRemove = "mcp.remove";
+    public const string McpSetEnabled = "mcp.setEnabled";
+    /// <summary>Reconnects: restarts failed servers and applies edits made to mcp.json by hand.</summary>
+    public const string McpReload = "mcp.reload";
+    /// <summary>Copies servers from Claude Desktop's config. Existing names are kept.</summary>
+    public const string McpImportDesktop = "mcp.importDesktop";
 }
 
 public static class Notifications
@@ -36,6 +46,9 @@ public static class Notifications
 
     /// <summary>The session list changed (created, renamed, started or finished running).</summary>
     public const string SessionsChanged = "sessions.changed";
+
+    /// <summary><see cref="McpListResult"/> after a server connected, failed or was edited.</summary>
+    public const string McpChanged = "mcp.changed";
 }
 
 public sealed record AppInfo(
@@ -146,3 +159,18 @@ public sealed record AgentEventDto(
     long? InputTokens = null,
     long? OutputTokens = null,
     string? Diff = null);
+
+// ---- MCP ----
+
+/// <summary>Status: connecting | ready | failed | disabled. Transport: stdio | http | file.</summary>
+public sealed record McpServerInfo(string Name, string Transport, string Status, string? Error, IReadOnlyList<string> Tools);
+
+/// <summary>Imported: names added by <see cref="Methods.McpImportDesktop"/>, otherwise null.</summary>
+public sealed record McpListResult(IReadOnlyList<McpServerInfo> Servers, string ConfigPath, IReadOnlyList<string>? Imported = null);
+
+/// <summary>Command: the whole command line, e.g. <c>npx -y @scope/server C:\proj</c>. Url: for remote servers. Exactly one is set.</summary>
+public sealed record McpAddParams(string Name, string? Command = null, string? Url = null);
+
+public sealed record McpNameParams(string Name);
+
+public sealed record McpEnabledParams(string Name, bool Enabled);

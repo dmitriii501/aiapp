@@ -28,4 +28,8 @@ namespace Kairo.Protocol;
 [JsonSerializable(typeof(SessionModeParams))]
 [JsonSerializable(typeof(PermissionRespondParams))]
 [JsonSerializable(typeof(AgentEventDto))]
+[JsonSerializable(typeof(McpListResult))]
+[JsonSerializable(typeof(McpAddParams))]
+[JsonSerializable(typeof(McpNameParams))]
+[JsonSerializable(typeof(McpEnabledParams))]
 public sealed partial class ProtocolJsonContext : JsonSerializerContext;

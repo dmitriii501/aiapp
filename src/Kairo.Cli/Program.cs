@@ -8,6 +8,7 @@ using Kairo.Core.Permissions;
 using Kairo.Core.Sessions;
 using Kairo.Core.Tools;
 using Kairo.Host;
+using Kairo.Mcp;
 using Kairo.Tools;
 using Kairo.Windows;
 
@@ -106,10 +107,18 @@ if (session is not null)
 
 var interactive = options.Prompt is null;
 var ui = new ConsoleUi(interactive);
+
+await using var mcp = new McpManager(new McpConfigStore(McpConfigStore.DefaultPath));
+if (!options.NoMcp)
+{
+    await mcp.ReloadAsync();
+    foreach (var failed in mcp.Servers.Where(s => s.Status == McpStatus.Failed))
+        ConsoleUi.Write(ConsoleColor.Yellow, $"MCP «{failed.Name}»: {failed.Error}\n");
+}
 var instructions = SystemPrompt.FindInstructionFiles(cwd, userConfigDir);
 var agent = new Agent(
     provider,
-    new ToolRegistry(BuiltinTools.All()),
+    new ToolRegistry(BuiltinTools.All().Concat(mcp.Tools)),
     new PermissionEngine(rules, mode),
     ui,
     new ToolContext(cwd),

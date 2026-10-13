@@ -14,6 +14,7 @@ public static class HostMethods
         AgentHost host,
         SettingsService settings,
         SessionStore store,
+        McpService mcp,
         Func<Task<string?>> pickFolder,
         string hostName)
     {
@@ -59,6 +60,14 @@ public static class HostMethods
             host.SetMode(p.SessionId, p.Mode);
             return Task.FromResult(new Ok());
         });
+
+        rpc.Register(Methods.McpList, ctx.Empty, ctx.McpListResult, (_, _) => Task.FromResult(mcp.List()));
+        rpc.Register(Methods.McpAdd, ctx.McpAddParams, ctx.McpListResult, (p, _) => Task.FromResult(mcp.Add(p)));
+        rpc.Register(Methods.McpRemove, ctx.McpNameParams, ctx.McpListResult, (p, _) => Task.FromResult(mcp.Remove(p.Name)));
+        rpc.Register(Methods.McpSetEnabled, ctx.McpEnabledParams, ctx.McpListResult, (p, _) => Task.FromResult(mcp.SetEnabled(p.Name, p.Enabled)));
+        rpc.Register(Methods.McpReload, ctx.Empty, ctx.McpListResult, (_, _) => Task.FromResult(mcp.Reload()));
+        rpc.Register(Methods.McpImportDesktop, ctx.Empty, ctx.McpListResult, (_, _) => Task.FromResult(mcp.ImportDesktop()));
+        mcp.Changed += () => _ = rpc.NotifyAsync(Notifications.McpChanged, mcp.List(), ctx.McpListResult);
 
         rpc.Register(Methods.PermissionRespond, ctx.PermissionRespondParams, ctx.Ok, (p, _) =>
         {

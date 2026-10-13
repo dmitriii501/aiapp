@@ -22,7 +22,8 @@ public enum PermissionMode
 /// <summary>
 /// A rule like <c>Read</c>, <c>Shell(git status)</c>, <c>Shell(npm test:*)</c> or <c>Read(**/.env)</c>.
 /// Shell patterns match the command (a trailing <c>:*</c> means "this prefix"); file patterns are globs
-/// matched against the workspace-relative path and the full path.
+/// matched against the workspace-relative path and the full path. A tool name ending in <c>*</c> covers a family,
+/// such as <c>mcp__github__*</c> for every tool of one MCP server.
 /// </summary>
 public sealed partial record PermissionRule(string Tool, string? Pattern)
 {
@@ -36,7 +37,10 @@ public sealed partial record PermissionRule(string Tool, string? Pattern)
 
     public bool Matches(string toolName, ToolAssessment call, ToolContext ctx)
     {
-        if (!string.Equals(Tool, toolName, StringComparison.OrdinalIgnoreCase))
+        var sameTool = Tool.EndsWith('*')
+            ? toolName.StartsWith(Tool[..^1], StringComparison.OrdinalIgnoreCase)
+            : string.Equals(Tool, toolName, StringComparison.OrdinalIgnoreCase);
+        if (!sameTool)
             return false;
         if (Pattern is null || Pattern == "*")
             return true;
@@ -77,7 +81,7 @@ public sealed partial record PermissionRule(string Tool, string? Pattern)
         return new Regex(sb.ToString(), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
-    [GeneratedRegex(@"^(?<tool>[A-Za-z_][\w.]*)(?:\((?<pattern>.+)\))?$")]
+    [GeneratedRegex(@"^(?<tool>[A-Za-z_][\w.]*\*?)(?:\((?<pattern>.+)\))?$")]
     private static partial Regex RuleSyntax();
 }
 
@@ -129,5 +133,7 @@ public sealed class PermissionEngine(PermissionRules rules, PermissionMode mode)
 
     /// <summary>Remembers an "always allow" answer for the rest of the session.</summary>
     public void AllowForSession(string toolName, ToolAssessment call) =>
-        Rules.Allow.Add(new PermissionRule(toolName, call.Risk == RiskLevel.Exec ? call.Subject.Trim() : call.Subject.Replace('\\', '/')));
+        Rules.Allow.Add(toolName.StartsWith("mcp__", StringComparison.Ordinal)
+            ? new PermissionRule(toolName, null) // the arguments of an MCP call are rarely the same twice
+            : new PermissionRule(toolName, call.Risk == RiskLevel.Exec ? call.Subject.Trim() : call.Subject.Replace('\\', '/')));
 }

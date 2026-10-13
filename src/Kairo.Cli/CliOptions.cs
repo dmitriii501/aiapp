@@ -13,6 +13,7 @@ internal sealed class CliOptions
     public string? Mode { get; private set; }
     public string? WorkingDirectory { get; private set; }
     public List<string> Allow { get; } = [];
+    public bool NoMcp { get; private set; }
     public bool Help { get; private set; }
 
     public const string Usage = """
@@ -34,6 +35,7 @@ internal sealed class CliOptions
           --mode <mode>              default | acceptEdits | plan
           --allow "<rule>"           extra allow rule, e.g. "Shell(dotnet test:*)" (repeatable)
           --cwd <dir>                working directory
+          --no-mcp                   do not connect MCP servers from %APPDATA%\Kairo\mcp.json
 
         Keys: ANTHROPIC_API_KEY for anthropic, KAIRO_API_KEY for openai-compatible (optional).
         Settings: %APPDATA%\Kairo\config.toml and .kairo\config.toml in the project.
@@ -60,6 +62,7 @@ internal sealed class CliOptions
                 case "--mode": o.Mode = Next(); break;
                 case "--allow": o.Allow.Add(Next()); break;
                 case "--cwd": o.WorkingDirectory = Next(); break;
+                case "--no-mcp": o.NoMcp = true; break;
                 case "sessions" when o.Command is null: o.Command = "sessions"; break;
                 default: throw new ArgumentException($"Unknown argument '{a}'. Run 'kairo --help'.");
             }

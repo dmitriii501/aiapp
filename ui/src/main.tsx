@@ -6,7 +6,10 @@ import { useStore } from "./store";
 import "./styles.css";
 
 // Mock-only demos for screenshots and UI work in a browser:
-// index.html#demo (waiting for approval), #demo-done (finished turn), #settings.
+// index.html#demo (waiting for approval), #demo-done (finished turn), #settings, #mcp.
+if (bridge.kind === "mock" && location.hash === "#mcp") {
+  setTimeout(() => useStore.getState().setMcpOpen(true), 300);
+}
 if (bridge.kind === "mock" && location.hash === "#settings") {
   setTimeout(() => useStore.getState().setSettingsOpen(true), 300);
 }

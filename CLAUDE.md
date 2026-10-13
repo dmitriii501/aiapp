@@ -7,6 +7,7 @@ Open-source AI super-app for Windows: coding agent (Claude Code / Codex / Cursor
 - `Kairo.Core` — provider-neutral messages and `IModelProvider` (`Models/`), the agent loop (`Agents/`), permissions, `ITool`, system prompt + `AGENTS.md` discovery (`Context/`), SQLite sessions, `config.toml`.
 - `Kairo.Providers` — Anthropic (official SDK) and OpenAI-compatible (raw HTTP + SSE) adapters.
 - `Kairo.Tools` — Read, Write, Edit, Glob, Grep, Shell.
+- `Kairo.Mcp` — MCP client (official SDK, `ModelContextProtocol.Core`): `McpConfigStore` (`%APPDATA%\Kairo\mcp.json`, Claude Desktop format), `McpManager` (connections, `mcp__server__tool` tools, always `exec` risk). Project-level `.mcp.json` is deliberately not read.
 - `Kairo.Host` — runs sessions for a UI: background turns, `AgentEventDto` streaming, pending permissions, settings (`config.toml` + secret store), `ProviderFactory` (shared with the CLI). `HostMethods` is the complete list of methods the UI can call.
 - `Kairo.Windows` — Credential Manager (`CredentialStore`). Keys: `Kairo/<provider>`; env vars override.
 - `Kairo.Cli` — `kairo` (interactive, `-p`, `-c`, `-r`, `sessions`).

@@ -1,4 +1,4 @@
-import { Cpu, Folder } from "lucide-react";
+import { Cpu, Folder, Plug } from "lucide-react";
 import { useStore } from "../store";
 import { folderName } from "../format";
 
@@ -8,6 +8,12 @@ export function StatusBar() {
   const settings = useStore((s) => s.settings);
   const session = useStore((s) => s.sessions.find((x) => x.id === s.currentId));
   const chat = useStore((s) => (s.currentId ? s.chats[s.currentId] : undefined));
+  const mcp = useStore((s) => s.mcp);
+  const setMcpOpen = useStore((s) => s.setMcpOpen);
+
+  const enabled = mcp?.servers.filter((s) => s.status !== "disabled") ?? [];
+  const ready = enabled.filter((s) => s.status === "ready").length;
+  const failed = enabled.some((s) => s.status === "failed");
 
   return (
     <footer className="statusbar">
@@ -24,6 +30,14 @@ export function StatusBar() {
         </span>
       </div>
       <div className="statusbar__group">
+        <button
+          className={`statusbar__item statusbar__button${failed ? " statusbar__button--warn" : ""}`}
+          title={failed ? "Часть серверов MCP не подключилась" : "Серверы MCP"}
+          onClick={() => setMcpOpen(true)}
+        >
+          <Plug size={13} />
+          {enabled.length === 0 ? "MCP" : `MCP: ${ready}/${enabled.length}`}
+        </button>
         {chat?.usage && (
           <span className="statusbar__item" title="Токены последнего ответа: вход / выход">
             ↑{k(chat.usage.input)} ↓{k(chat.usage.output)}

@@ -500,6 +500,23 @@ select.input {
   white-space: nowrap;
 }
 
+.statusbar__button {
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.statusbar__button:hover {
+  background: var(--list-hover);
+}
+
+.statusbar__button--warn {
+  color: var(--warn);
+}
+
 /* ---------- Welcome ---------- */
 
 .welcome {
@@ -1207,6 +1224,10 @@ select.input {
   box-shadow: var(--shadow);
 }
 
+.dialog--wide {
+  width: min(620px, 100% - 32px);
+}
+
 .dialog__header {
   display: flex;
   align-items: center;
@@ -1252,6 +1273,141 @@ select.input {
 .field__hint {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* ---------- MCP ---------- */
+
+.mcp__lead {
+  margin: 10px 0 12px;
+}
+
+.mcp__empty {
+  padding: 10px 12px;
+  border: 1px dashed var(--input-border);
+  color: var(--muted);
+}
+
+.mcp__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+}
+
+.mcp__row {
+  padding: 6px 10px;
+}
+
+.mcp__row + .mcp__row {
+  border-top: 1px solid var(--border);
+}
+
+.mcp__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.mcp__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.mcp__dot--ready {
+  background: var(--ok);
+}
+
+.mcp__dot--failed {
+  background: var(--error);
+}
+
+.mcp__dot--connecting {
+  background: var(--warn);
+}
+
+.mcp__name {
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+}
+
+.mcp__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mcp__spacer {
+  flex: 1;
+}
+
+.mcp__tools,
+.mcp__action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mcp__tools:hover,
+.mcp__action:hover {
+  text-decoration: underline;
+}
+
+.mcp__action {
+  margin-left: 6px;
+}
+
+.mcp__error {
+  margin: 2px 0 2px 16px;
+  color: var(--error);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.mcp__toolnames {
+  margin: 2px 0 2px 16px;
+  color: var(--muted);
+  font: 12px/1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.mcp__tabs {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mcp__tab {
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mcp__tab--active {
+  border-bottom-color: var(--accent);
+  color: var(--text-strong);
+}
+
+.mcp__path {
+  margin: 14px 0 4px;
+}
+
+.mcp__file {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 /* ---------- Notification ---------- */

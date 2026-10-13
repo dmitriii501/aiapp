@@ -7,6 +7,7 @@ import type {
   PermissionPrompt,
   ProviderId,
   SessionSummary,
+  McpListResult,
   Settings,
   SettingsUpdate,
   ToolStatus,
@@ -43,6 +44,8 @@ interface State {
   currentId?: string;
   chats: Record<string, Chat>;
   settingsOpen: boolean;
+  mcp?: McpListResult;
+  mcpOpen: boolean;
   toast?: string;
 
   boot(): Promise<void>;
@@ -57,6 +60,12 @@ interface State {
   respond(requestId: string, decision: Decision): Promise<void>;
   saveSettings(update: SettingsUpdate, key?: { provider: ProviderId; key: string }): Promise<boolean>;
   setSettingsOpen(open: boolean): void;
+  setMcpOpen(open: boolean): void;
+  mcpAdd(name: string, target: { command?: string; url?: string }): Promise<boolean>;
+  mcpRemove(name: string): Promise<void>;
+  mcpSetEnabled(name: string, enabled: boolean): Promise<void>;
+  mcpReload(): Promise<void>;
+  mcpImportDesktop(): Promise<void>;
   showToast(text?: string): void;
 }
 
@@ -139,13 +148,16 @@ export const useStore = create<State>((set, get) => {
     workspaces: [],
     chats: {},
     settingsOpen: false,
+    mcpOpen: false,
 
     async boot() {
       bridge.on(Notifications.AgentEvent, onEvent);
       bridge.on(Notifications.SessionsChanged, () => void refreshSessions().catch(fail));
+      bridge.on(Notifications.McpChanged, (mcp) => set({ mcp }));
       try {
         const settings = await bridge.call(Methods.SettingsGet, {});
         set({ settings });
+        void bridge.call(Methods.McpList, {}).then((mcp) => set({ mcp })).catch(fail);
         await Promise.all([refreshSessions(), refreshWorkspaces()]);
       } catch (e) {
         fail(e);
@@ -255,6 +267,38 @@ export const useStore = create<State>((set, get) => {
     },
 
     setSettingsOpen: (open) => set({ settingsOpen: open }),
+    setMcpOpen: (open) => set({ mcpOpen: open }),
+
+    async mcpAdd(name, target) {
+      try {
+        set({ mcp: await bridge.call(Methods.McpAdd, { name, ...target }) });
+        return true;
+      } catch (e) {
+        fail(e);
+        return false;
+      }
+    },
+
+    async mcpRemove(name) {
+      await bridge.call(Methods.McpRemove, { name }).then((mcp) => set({ mcp })).catch(fail);
+    },
+
+    async mcpSetEnabled(name, enabled) {
+      await bridge.call(Methods.McpSetEnabled, { name, enabled }).then((mcp) => set({ mcp })).catch(fail);
+    },
+
+    async mcpReload() {
+      await bridge.call(Methods.McpReload, {}).then((mcp) => set({ mcp })).catch(fail);
+    },
+
+    async mcpImportDesktop() {
+      try {
+        const mcp = await bridge.call(Methods.McpImportDesktop, {});
+        set({ mcp, toast: mcp.imported?.length ? `Добавлено серверов: ${mcp.imported.length}` : "Новых серверов в Claude Desktop нет" });
+      } catch (e) {
+        fail(e);
+      }
+    },
     showToast: (text) => set({ toast: text }),
   };
 });
