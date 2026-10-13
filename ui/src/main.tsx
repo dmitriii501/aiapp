@@ -44,7 +44,7 @@ if (bridge.kind === "mock" && location.hash.startsWith("#demo")) {
       });
     }
     await store.startSession(store.workspaces[0].path);
-    await useStore.getState().send("Поменяй приветствие в Program.cs на Hello, Kairo");
+    await useStore.getState().send(location.hash === "#demo-plan" ? "План: переименовать функцию Calc" : "Поменяй приветствие в Program.cs на Hello, Kairo");
   }, 300);
 }
 

@@ -50,8 +50,11 @@ public static class Transcript
                         break;
                     case ToolCallPart c:
                         toolRows[c.Id] = items.Count;
-                        items.Add(new TranscriptItem("tool", ToolCallId: c.Id, Tool: c.Name, Summary: Summarize(c, tools, ctx), Status: "interrupted"));
+                    {
+                        var (summary, detail) = Summarize(c, tools, ctx);
+                        items.Add(new TranscriptItem("tool", ToolCallId: c.Id, Tool: c.Name, Summary: summary, Status: "interrupted", Detail: detail));
                         break;
+                    }
                 }
             }
         }
@@ -64,17 +67,18 @@ public static class Transcript
     public static string Clip(string output) =>
         output.Length <= MaxOutputChars ? output : output[..MaxOutputChars] + "\n…";
 
-    private static string Summarize(ToolCallPart call, ToolRegistry tools, ToolContext ctx)
+    private static (string Summary, string? Detail) Summarize(ToolCallPart call, ToolRegistry tools, ToolContext ctx)
     {
         if (!tools.TryGet(call.Name, out var tool))
-            return call.Name;
+            return (call.Name, null);
         try
         {
-            return tool.Assess(call.Input, ctx).Summary;
+            var assessment = tool.Assess(call.Input, ctx);
+            return (assessment.Summary, assessment.Detail);
         }
         catch (ToolInputException)
         {
-            return call.Name;
+            return (call.Name, null);
         }
     }
 }

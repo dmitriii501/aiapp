@@ -10,7 +10,10 @@ public enum RiskLevel { Read, Write, Exec, Network, System }
 /// What a specific call would do. <see cref="Subject"/> is what permission rules match against
 /// (a full file path, a shell command); <see cref="Summary"/> is shown to the user.
 /// </summary>
-public sealed record ToolAssessment(RiskLevel Risk, string Subject, string Summary);
+/// <param name="Detail">
+/// Optional text for the UI to show with the call, derived from the input alone (a task list, a plan). The model never sees it.
+/// </param>
+public sealed record ToolAssessment(RiskLevel Risk, string Subject, string Summary, string? Detail = null);
 
 /// <summary>Diff is shown to the user only (unified format, see <see cref="UnifiedDiff"/>); the model never sees it.</summary>
 public sealed record ToolResult(string Content, bool IsError = false, string? Diff = null)

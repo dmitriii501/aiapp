@@ -44,7 +44,7 @@ export type Mode = "default" | "acceptEdits" | "plan";
 export type ProviderId = "anthropic" | "openai-compatible";
 export type Decision = "allow" | "always" | "deny";
 export type ToolStatus = "running" | "done" | "error" | "denied" | "interrupted";
-export type Risk = "read" | "write" | "exec" | "network" | "system";
+export type Risk = "read" | "write" | "exec" | "network" | "system" | "plan";
 
 export interface AppInfo {
   name: string;
@@ -107,6 +107,8 @@ export interface TranscriptItem {
   /** On a user prompt: the checkpoint holding the files the agent changed while answering it. */
   checkpointId?: string;
   files?: number;
+  /** Extra text for a tool call, e.g. the task list of TodoWrite (JSON). */
+  detail?: string;
 }
 
 export interface PermissionPrompt {
@@ -118,6 +120,8 @@ export interface PermissionPrompt {
   reason: string;
   /** Unified diff of what the call would change, when it is a write or edit. */
   diff?: string;
+  /** The plan (markdown), when the agent asks to leave plan mode. */
+  detail?: string;
 }
 
 export interface SessionDetail {
@@ -136,6 +140,7 @@ export type AgentEventType =
   | "permission"
   | "permission_resolved"
   | "checkpoint"
+  | "mode"
   | "error"
   | "turn_finished";
 
@@ -156,6 +161,7 @@ export interface AgentEvent {
   diff?: string;
   checkpointId?: string;
   files?: number;
+  detail?: string;
 }
 
 export type RollbackAction = "restore" | "delete" | "conflict" | "unchanged" | "unavailable";

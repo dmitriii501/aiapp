@@ -147,7 +147,8 @@ public sealed record TranscriptItem(
     string? Status = null,
     string? Diff = null,
     string? CheckpointId = null,
-    int? Files = null);
+    int? Files = null,
+    string? Detail = null);
 
 public sealed record SessionDetail(
     SessionSummary Session,
@@ -162,9 +163,11 @@ public sealed record SessionModeParams(string SessionId, string Mode);
 
 // ---- Permissions ----
 
-/// <summary>A tool call waiting for the user. Risk: read | write | exec | network | system.</summary>
-/// <summary>Diff: unified diff of what a write or edit would change, when there is one.</summary>
-public sealed record PermissionPrompt(string RequestId, string Tool, string Summary, string Subject, string Risk, string Reason, string? Diff = null);
+/// <summary>
+/// A tool call waiting for the user. Risk: read | write | exec | network | system | plan (the agent asks to leave plan mode).
+/// Diff: unified diff of what a write or edit would change. Detail: the plan, for a plan prompt.
+/// </summary>
+public sealed record PermissionPrompt(string RequestId, string Tool, string Summary, string Subject, string Risk, string Reason, string? Diff = null, string? Detail = null);
 
 /// <summary>Decision: allow | always | deny.</summary>
 public sealed record PermissionRespondParams(string RequestId, string Decision);
@@ -173,7 +176,7 @@ public sealed record PermissionRespondParams(string RequestId, string Decision);
 
 /// <summary>
 /// One streamed event of a turn. Type: turn_started | text | tool_started | tool_finished | permission |
-/// permission_resolved | error | turn_finished. Only the fields relevant to the type are set.
+/// permission_resolved | checkpoint | mode | error | turn_finished. For "mode", Text is the new permission mode. Only the fields relevant to the type are set.
 /// </summary>
 public sealed record AgentEventDto(
     string SessionId,
@@ -191,7 +194,8 @@ public sealed record AgentEventDto(
     long? OutputTokens = null,
     string? Diff = null,
     string? CheckpointId = null,
-    int? Files = null);
+    int? Files = null,
+    string? Detail = null);
 
 // ---- MCP ----
 

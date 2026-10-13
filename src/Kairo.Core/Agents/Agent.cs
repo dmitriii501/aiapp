@@ -10,7 +10,7 @@ public abstract record AgentEvent;
 
 public sealed record AgentTextDelta(string Text) : AgentEvent;
 
-public sealed record ToolCallStarted(string Id, string Tool, string Summary) : AgentEvent;
+public sealed record ToolCallStarted(string Id, string Tool, string Summary, string? Detail = null) : AgentEvent;
 
 public sealed record ToolCallFinished(string Id, string Tool, ToolResult Result, bool Denied) : AgentEvent;
 
@@ -126,7 +126,7 @@ public sealed class Agent(
                 foreach (var c in calls)
                 {
                     var prepared = Prepare(c);
-                    yield return new ToolCallStarted(c.Id, c.Name, prepared.Summary);
+                    yield return new ToolCallStarted(c.Id, c.Name, prepared.Summary, prepared.Assessment?.Detail);
 
                     var (result, denied) = prepared.Error is { } error
                         ? (error, false)
@@ -176,6 +176,9 @@ public sealed class Agent(
         if (verdict.Decision == PermissionDecision.Ask)
         {
             var answer = await prompt.AskAsync(new PermissionRequest(call.Name, assessment, verdict.Reason, PreviewOf(tool, call)), ct).ConfigureAwait(false);
+            // Approving a plan leaves plan mode: with edits auto-accepted ("always") or each one confirmed.
+            if (call.Name == PermissionEngine.ExitPlanTool && answer != PermissionAnswer.Deny)
+                permissions.Mode = answer == PermissionAnswer.AllowAlways ? PermissionMode.AcceptEdits : PermissionMode.Default;
             if (answer == PermissionAnswer.AllowAlways)
                 permissions.AllowForSession(call.Name, assessment);
             verdict = answer == PermissionAnswer.Deny

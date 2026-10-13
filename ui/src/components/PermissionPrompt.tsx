@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { fromTerminal } from "../keys";
 import type { Decision, PermissionPrompt as Prompt } from "../bridge/protocol";
 import { DiffView, diffStats } from "./DiffView";
+import { Markdown } from "./Markdown";
 
 const TITLES: Record<string, string> = {
   write: "Изменение файла",
@@ -10,12 +11,20 @@ const TITLES: Record<string, string> = {
   read: "Чтение файла",
   network: "Сетевой доступ",
   system: "Действие в системе",
+  plan: "План",
 };
 
-const OPTIONS: { decision: Decision; label: string }[] = [
+const DEFAULT_OPTIONS: { decision: Decision; label: string }[] = [
   { decision: "allow", label: "Да" },
   { decision: "always", label: "Да, и не спрашивать до конца сессии" },
   { decision: "deny", label: "Нет" },
+];
+
+/** Approving a plan also decides what happens next: edits applied automatically, or each one asked about. */
+const PLAN_OPTIONS: { decision: Decision; label: string }[] = [
+  { decision: "always", label: "Да, выполнять; правки применять без вопросов" },
+  { decision: "allow", label: "Да, выполнять; каждую правку подтверждать" },
+  { decision: "deny", label: "Нет, продолжить планирование" },
 ];
 
 /**
@@ -24,6 +33,8 @@ const OPTIONS: { decision: Decision; label: string }[] = [
  */
 export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
   const respond = useStore((s) => s.respond);
+  const isPlan = prompt.risk === "plan";
+  const OPTIONS = isPlan ? PLAN_OPTIONS : DEFAULT_OPTIONS;
   const [selected, setSelected] = useState(0);
   const [done, setDone] = useState(false);
 
@@ -59,7 +70,11 @@ export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
   return (
     <div className="permission" role="dialog" aria-label="Подтверждение действия">
       <div className="permission__title">{TITLES[prompt.risk] ?? "Действие"}</div>
-      {prompt.diff ? (
+      {isPlan ? (
+        <div className="permission__plan">
+          <Markdown text={prompt.detail ?? ""} />
+        </div>
+      ) : prompt.diff ? (
         <>
           <div className="permission__file">
             <span className="permission__path">{prompt.subject}</span>
@@ -71,7 +86,7 @@ export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
         <pre className="permission__subject">{prompt.subject}</pre>
       )}
       {outside && <div className="permission__note">Файл находится вне папки проекта.</div>}
-      <div className="permission__question">Разрешить?</div>
+      <div className="permission__question">{isPlan ? "Выполнять этот план?" : "Разрешить?"}</div>
       <div className="permission__options" role="listbox">
         {OPTIONS.map((o, i) => (
           <button

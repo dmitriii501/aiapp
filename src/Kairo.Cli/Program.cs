@@ -122,7 +122,7 @@ var agent = new Agent(
     new PermissionEngine(rules, mode),
     ui,
     new ToolContext(cwd),
-    SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now),
+    SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now, mode),
     new AgentOptions(model, options.Effort ?? config.Effort),
     history);
 

@@ -1287,6 +1287,64 @@ select.input {
   font-size: 12px;
 }
 
+/* ---------- Todos and plan ---------- */
+
+.todos {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todos__item {
+  display: flex;
+  gap: 8px;
+  line-height: 1.6;
+}
+
+.todos__mark {
+  flex: none;
+  width: 1.2em;
+  color: var(--muted);
+}
+
+.todos__item--in_progress {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.todos__item--in_progress .todos__mark {
+  color: var(--accent);
+}
+
+.todos__item--completed {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.todos__item--completed .todos__mark {
+  color: var(--ok);
+}
+
+.plan {
+  max-height: 360px;
+  margin: 4px 0 0 18px;
+  padding: 4px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  user-select: text;
+}
+
+.permission__plan {
+  max-height: 300px;
+  margin: 6px 0;
+  padding: 2px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  user-select: text;
+}
+
 /* ---------- Rollback ---------- */
 
 .entry__changes {

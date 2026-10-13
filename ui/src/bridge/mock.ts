@@ -49,6 +49,46 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
   const event = (e: AgentEvent) => notify(Notifications.AgentEvent, e);
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+  /** A plan-mode turn: a task list, then the plan the user has to approve. */
+  async function runPlan(id: string, s: { summary: SessionSummary; items: TranscriptItem[]; mode: Mode }) {
+    const todos = JSON.stringify([
+      { content: "Найти все вызовы старой функции", status: "completed" },
+      { content: "Составить план изменений", status: "in_progress" },
+      { content: "Применить правки и запустить тесты", status: "pending" },
+    ]);
+    event({ sessionId: id, type: "tool_started", toolCallId: "p1", tool: "TodoWrite", summary: "TodoWrite(1/3)", detail: todos });
+    await sleep(200);
+    event({ sessionId: id, type: "tool_finished", toolCallId: "p1", tool: "TodoWrite", status: "done", output: "Todo list updated (1 of 3 done)." });
+
+    const plan = "## План\n\n1. `src/Orders.cs`: переименовать `Calc` в `CalculateTotal`.\n2. `src/Checkout.cs`, `tests/OrdersTests.cs`: обновить вызовы (4 места).\n3. Запустить `dotnet test`.\n\nФайлы вне этих трёх не трогаю.";
+    event({ sessionId: id, type: "tool_started", toolCallId: "p2", tool: "ExitPlanMode", summary: "ExitPlanMode", detail: plan });
+    const permission: PermissionPrompt = {
+      requestId: "r" + Date.now(),
+      tool: "ExitPlanMode",
+      summary: "ExitPlanMode",
+      subject: ".",
+      risk: "plan",
+      reason: "plan approval",
+      detail: plan,
+    };
+    event({ sessionId: id, type: "permission", permission });
+    const decision = await new Promise<string>((resolve) => waiting.set(permission.requestId, resolve));
+    event({ sessionId: id, type: "permission_resolved", requestId: permission.requestId });
+    const denied = decision === "deny";
+    event({ sessionId: id, type: "tool_finished", toolCallId: "p2", tool: "ExitPlanMode", status: denied ? "denied" : "done", output: denied ? "Permission denied (the user declined)." : "The user approved the plan." });
+    if (!denied) {
+      s.mode = decision === "always" ? "acceptEdits" : "default";
+      event({ sessionId: id, type: "mode", text: s.mode });
+    }
+    for (const word of (denied ? "Хорошо, доработаю план." : "Приступаю к выполнению.").split(/(?<=\s)/)) {
+      await sleep(25);
+      event({ sessionId: id, type: "text", text: word });
+    }
+    s.summary.running = false;
+    event({ sessionId: id, type: "turn_finished", reason: "end_turn", inputTokens: 900, outputTokens: 120 });
+    notify(Notifications.SessionsChanged, {});
+  }
+
   async function runTurn(id: string, text: string) {
     const s = sessions.get(id)!;
     s.items.push({ kind: "user", text });
@@ -56,6 +96,11 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
     s.summary.running = true;
     event({ sessionId: id, type: "turn_started" });
     notify(Notifications.SessionsChanged, {});
+
+    if (text.toLowerCase().startsWith("план")) {
+      await runPlan(id, s);
+      return;
+    }
 
     for (const chunk of ["Посмотрю, ", "как устроен ", "проект.\n\n"]) {
       await sleep(120);

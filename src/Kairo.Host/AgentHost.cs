@@ -129,7 +129,7 @@ public sealed class AgentHost(
             live.Permissions,
             new Prompt(this, sessionId, live.Tools),
             live.Tools,
-            SystemPrompt.Build(cwd, SystemPrompt.FindInstructionFiles(cwd, settings.UserConfigDirectory), DateTimeOffset.Now),
+            SystemPrompt.Build(cwd, SystemPrompt.FindInstructionFiles(cwd, settings.UserConfigDirectory), DateTimeOffset.Now, live.Permissions.Mode),
             new AgentOptions(ProviderFactory.ModelOf(config), config.Effort),
             live.History);
 
@@ -230,13 +230,16 @@ public sealed class AgentHost(
                         await _notify(new AgentEventDto(id, "text", Text: d.Text)).ConfigureAwait(false);
                         break;
                     case ToolCallStarted s:
-                        await _notify(new AgentEventDto(id, "tool_started", ToolCallId: s.Id, Tool: s.Tool, Summary: s.Summary)).ConfigureAwait(false);
+                        await _notify(new AgentEventDto(id, "tool_started", ToolCallId: s.Id, Tool: s.Tool, Summary: s.Summary, Detail: s.Detail)).ConfigureAwait(false);
                         break;
                     case ToolCallFinished f:
                         await _notify(new AgentEventDto(id, "tool_finished", ToolCallId: f.Id, Tool: f.Tool,
                             Output: Transcript.Clip(f.Result.Content),
                             Status: f.Denied ? "denied" : f.Result.IsError ? "error" : "done",
                             Diff: f.Result.Diff is { Length: > 0 } diff ? diff : null)).ConfigureAwait(false);
+                        // Approving a plan changed the permission mode: tell the UI.
+                        if (f.Tool == PermissionEngine.ExitPlanTool && !f.Denied && !f.Result.IsError)
+                            await _notify(new AgentEventDto(id, "mode", Text: SettingsService.ModeName(live.Permissions.Mode))).ConfigureAwait(false);
                         break;
                     case ModelCallCompleted m:
                         input += m.Usage.InputTokens ?? 0;
@@ -274,8 +277,10 @@ public sealed class AgentHost(
         {
             var requestId = Guid.NewGuid().ToString("N");
             var subject = request.Call.Risk == RiskLevel.Exec ? request.Call.Subject : ctx.DisplayPath(request.Call.Subject);
+            var isPlan = request.Tool == PermissionEngine.ExitPlanTool;
             var prompt = new PermissionPrompt(requestId, request.Tool, request.Call.Summary, subject,
-                request.Call.Risk.ToString().ToLowerInvariant(), request.Reason, request.Diff is { Length: > 0 } ? request.Diff : null);
+                isPlan ? "plan" : request.Call.Risk.ToString().ToLowerInvariant(), request.Reason,
+                request.Diff is { Length: > 0 } ? request.Diff : null, isPlan ? request.Call.Detail : null);
             var pending = new PendingPermission(sessionId, prompt, new TaskCompletionSource<PermissionAnswer>(TaskCreationOptions.RunContinuationsAsynchronously));
             host._pending[requestId] = pending;
 

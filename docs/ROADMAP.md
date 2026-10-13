@@ -45,7 +45,7 @@
 
 ## M3 — Паритет с Claude Code / Codex
 - [x] Чекпоинты и откат (файлы, записанные `Write`/`Edit`; выбор файлов в диалоге)
-- [ ] Plan mode, todo-список
+- [x] Plan mode с утверждением плана (`ExitPlanMode`) и todo-список (`TodoWrite`)
 - [ ] Сабагенты
 - [ ] Хуки, скиллы, слэш-команды, память
 - [ ] Compaction

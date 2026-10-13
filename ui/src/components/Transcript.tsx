@@ -83,7 +83,7 @@ function parseSummary(tool: string, summary: string): string {
 function resultLine(tool: string, status: RowStatus, output?: string, diff?: string): string {
   if (status === "running") return "Выполняется…";
   if (status === "waiting") return "Ждёт подтверждения";
-  if (status === "denied") return "Отклонено";
+  if (status === "denied") return tool === "ExitPlanMode" ? "План отклонён, продолжаю планировать" : "Отклонено";
   if (status === "interrupted") return "Прервано";
   const text = (output ?? "").trim();
   const first = text.split("\n", 1)[0];
@@ -105,6 +105,8 @@ function resultLine(tool: string, status: RowStatus, output?: string, diff?: str
       const { added, removed } = diffStats(diff);
       return `Добавлено строк: ${added}, удалено: ${removed}`;
     }
+    case "ExitPlanMode":
+      return "План утверждён";
     case "Shell":
       return text === "(no output)" ? "Нет вывода" : lines > 1 ? `${first} (+${lines - 1} строк)` : first;
     default:
@@ -112,14 +114,47 @@ function resultLine(tool: string, status: RowStatus, output?: string, diff?: str
   }
 }
 
-function ToolEntry({ tool, summary, status, output, diff }: { tool: string; summary: string; status: RowStatus; output?: string; diff?: string }) {
+interface Todo {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+function parseTodos(json?: string): Todo[] {
+  try {
+    const value: unknown = json ? JSON.parse(json) : [];
+    return Array.isArray(value) ? (value as Todo[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const TODO_MARK = { pending: "☐", in_progress: "◐", completed: "☑" } as const;
+
+function TodoList({ todos }: { todos: Todo[] }) {
+  return (
+    <ul className="todos" aria-label="Список задач">
+      {todos.map((t, i) => (
+        <li key={i} className={`todos__item todos__item--${t.status}`}>
+          <span className="todos__mark" aria-hidden>
+            {TODO_MARK[t.status] ?? "☐"}
+          </span>
+          {t.content}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ToolEntry({ tool, summary, status, output, diff, detail: payload }: { tool: string; summary: string; status: RowStatus; output?: string; diff?: string; detail?: string }) {
   const [open, setOpen] = useState(false);
   const [diffHidden, setDiffHidden] = useState(false);
   const detail = parseSummary(tool, summary);
+  const todos = tool === "TodoWrite" && status === "done" ? parseTodos(payload) : undefined;
+  const plan = tool === "ExitPlanMode" && (status === "done" || status === "denied") ? payload : undefined;
   const finished = status !== "running" && status !== "waiting";
   // A change is always shown; other output is behind a toggle.
   const hasDiff = !!diff && status === "done";
-  const expandable = finished && (hasDiff || !!output);
+  const expandable = finished && (hasDiff || !!plan || !!output);
   const expanded = hasDiff ? !diffHidden : open;
   const toggle = () => (hasDiff ? setDiffHidden((h) => !h) : setOpen((o) => !o));
 
@@ -131,13 +166,22 @@ function ToolEntry({ tool, summary, status, output, diff }: { tool: string; summ
           <span className="tool-call__name">{tool}</span>
           {detail && <span className="tool-call__args">({detail})</span>}
         </div>
-        <button className="tool-result" onClick={() => expandable && toggle()} disabled={!expandable} aria-expanded={expanded}>
-          <span className="tool-result__elbow">⎿</span>
-          <span className="tool-result__text">{resultLine(tool, status, output, diff)}</span>
-          {expandable && <span className="tool-result__toggle">{expanded ? "скрыть" : "показать"}</span>}
-        </button>
+        {todos ? (
+          <TodoList todos={todos} />
+        ) : (
+          <button className="tool-result" onClick={() => expandable && toggle()} disabled={!expandable} aria-expanded={expanded}>
+            <span className="tool-result__elbow">⎿</span>
+            <span className="tool-result__text">{resultLine(tool, status, output, diff)}</span>
+            {expandable && <span className="tool-result__toggle">{expanded ? "скрыть" : "показать"}</span>}
+          </button>
+        )}
         {hasDiff && expanded && <DiffView diff={diff!} />}
-        {!hasDiff && open && output && <pre className="tool-output">{output}</pre>}
+        {plan && open && (
+          <div className="plan">
+            <Markdown text={plan} />
+          </div>
+        )}
+        {!hasDiff && !plan && open && output && <pre className="tool-output">{output}</pre>}
       </div>
     </div>
   );

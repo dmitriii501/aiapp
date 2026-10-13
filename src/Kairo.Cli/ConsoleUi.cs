@@ -1,5 +1,6 @@
 using Kairo.Core.Agents;
 using Kairo.Core.Models;
+using Kairo.Core.Permissions;
 
 namespace Kairo.Cli;
 
@@ -25,6 +26,8 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
                     EndLine();
                     Write(ConsoleColor.Cyan, "● ");
                     Console.WriteLine(s.Summary);
+                    if (s.Tool == "TodoWrite" && s.Detail is not null)
+                        PrintTodos(s.Detail);
                     break;
 
                 case ToolCallFinished f:
@@ -68,7 +71,17 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
             EndLine();
             if (request.Diff is { Length: > 0 } diff)
                 PrintDiff(diff);
-            Write(ConsoleColor.Yellow, $"  Allow {request.Tool}? ({request.Reason})  [y] yes  [a] always this session  [n] no: ");
+            if (request.Tool == PermissionEngine.ExitPlanTool)
+            {
+                Write(ConsoleColor.Magenta, "  Plan:\n");
+                foreach (var line in (request.Call.Detail ?? "").Split('\n'))
+                    Write(ConsoleColor.Gray, "    " + line + "\n");
+                Write(ConsoleColor.Yellow, "  Go ahead?  [a] yes, accept edits automatically  [y] yes, confirm each edit  [n] no, keep planning: ");
+            }
+            else
+            {
+                Write(ConsoleColor.Yellow, $"  Allow {request.Tool}? ({request.Reason})  [y] yes  [a] always this session  [n] no: ");
+            }
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
@@ -86,6 +99,18 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
                     return Task.FromResult(a);
                 }
             }
+        }
+    }
+
+    private static void PrintTodos(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        foreach (var todo in document.RootElement.EnumerateArray())
+        {
+            var status = todo.GetProperty("status").GetString();
+            var mark = status switch { "completed" => "[x]", "in_progress" => "[~]", _ => "[ ]" };
+            Write(status == "completed" ? ConsoleColor.DarkGray : status == "in_progress" ? ConsoleColor.Cyan : ConsoleColor.Gray,
+                $"    {mark} {todo.GetProperty("content").GetString()}\n");
         }
     }
 

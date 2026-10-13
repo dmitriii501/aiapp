@@ -251,6 +251,34 @@ public class HostTests : IDisposable
     }
 
     [Fact]
+    public async Task A_plan_is_shown_to_the_user_and_approving_it_changes_the_mode()
+    {
+        _model = new ScriptedProvider(
+            Call("t1", "TodoWrite", """{"todos":[{"content":"Step","status":"in_progress"}]}"""),
+            Call("p1", "ExitPlanMode", """{"plan":"1. Do the thing"}"""),
+            Say("Начинаю."));
+        var host = CreateHost();
+        var id = NewSession(host);
+        host.SetMode(id, "plan");
+
+        host.Send(id, "спланируй");
+        var ask = (await WaitFor("permission")).Permission!;
+
+        Assert.Equal(("plan", "ExitPlanMode", "1. Do the thing"), (ask.Risk, ask.Tool, ask.Detail));
+        var todo = _events.Single(e => e.Type == "tool_started" && e.Tool == "TodoWrite");
+        Assert.Contains("\"in_progress\"", todo.Detail);
+
+        host.RespondPermission(ask.RequestId, "always");
+        await WaitFor("turn_finished");
+
+        Assert.Equal("acceptEdits", _events.Single(e => e.Type == "mode").Text);
+        Assert.Equal("acceptEdits", host.Open(id).Mode);
+        var items = host.Open(id).Items;
+        Assert.Equal("1. Do the thing", items.Single(i => i.Tool == "ExitPlanMode").Detail);
+        Assert.Contains("in_progress", items.Single(i => i.Tool == "TodoWrite").Detail);
+    }
+
+    [Fact]
     public async Task Rolling_back_is_refused_while_the_agent_is_working()
     {
         _model = new ScriptedProvider(

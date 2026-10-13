@@ -21,7 +21,7 @@ import * as terminal from "./terminal/registry";
 export type Item =
   | { id: string; kind: "user"; text: string; checkpointId?: string; files?: number }
   | { id: string; kind: "assistant"; text: string; streaming: boolean }
-  | { id: string; kind: "tool"; toolCallId: string; tool: string; summary: string; output?: string; diff?: string; status: ToolStatus | "waiting" }
+  | { id: string; kind: "tool"; toolCallId: string; tool: string; summary: string; output?: string; diff?: string; detail?: string; status: ToolStatus | "waiting" }
   | { id: string; kind: "permission"; prompt: PermissionPrompt }
   | { id: string; kind: "error"; text: string }
   | { id: string; kind: "notice"; text: string };
@@ -138,13 +138,16 @@ export const useStore = create<State>((set, get) => {
           return { ...chat, items };
         case "tool_started":
           endStreaming();
-          items.push({ id: nextId(), kind: "tool", toolCallId: e.toolCallId!, tool: e.tool!, summary: e.summary ?? e.tool!, status: "running" });
+          items.push({ id: nextId(), kind: "tool", toolCallId: e.toolCallId!, tool: e.tool!, summary: e.summary ?? e.tool!, detail: e.detail, status: "running" });
           return { ...chat, items };
         case "tool_finished":
           return {
             ...chat,
             items: items.map((i) => (i.kind === "tool" && i.toolCallId === e.toolCallId ? { ...i, status: e.status ?? "done", output: e.output, diff: e.diff } : i)),
           };
+        case "mode":
+          // The agent left plan mode after the user approved its plan.
+          return { ...chat, mode: (e.text as Mode) ?? chat.mode };
         case "checkpoint": {
           // The files this prompt changed: shown under the prompt, updated as more files are changed.
           const at = items.findLastIndex((i) => i.kind === "user");
@@ -226,7 +229,7 @@ export const useStore = create<State>((set, get) => {
             case "assistant":
               return { id: nextId(), kind: "assistant", text: t.text ?? "", streaming: false };
             case "tool":
-              return { id: nextId(), kind: "tool", toolCallId: t.toolCallId!, tool: t.tool!, summary: t.summary ?? t.tool!, output: t.output, diff: t.diff, status: t.status ?? "done" };
+              return { id: nextId(), kind: "tool", toolCallId: t.toolCallId!, tool: t.tool!, summary: t.summary ?? t.tool!, output: t.output, diff: t.diff, detail: t.detail, status: t.status ?? "done" };
             default:
               return { id: nextId(), kind: "error", text: t.text ?? "" };
           }

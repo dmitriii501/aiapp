@@ -108,10 +108,20 @@ public sealed class PermissionEngine(PermissionRules rules, PermissionMode mode)
     public PermissionMode Mode { get; set; } = mode;
     public PermissionRules Rules { get; } = rules;
 
+    /// <summary>The tool that ends plan mode. It always asks in plan mode, whatever the allow rules say.</summary>
+    public const string ExitPlanTool = "ExitPlanMode";
+
     public PermissionVerdict Evaluate(string toolName, ToolAssessment call, ToolContext ctx)
     {
         if (Rules.Deny.FirstOrDefault(r => r.Matches(toolName, call, ctx)) is { } deny)
             return new(PermissionDecision.Deny, $"denied by rule {deny}");
+
+        if (toolName == ExitPlanTool)
+        {
+            return Mode == PermissionMode.Plan
+                ? new(PermissionDecision.Ask, "plan approval")
+                : new(PermissionDecision.Deny, "not in plan mode");
+        }
 
         if (Mode == PermissionMode.Plan && call.Risk != RiskLevel.Read)
             return new(PermissionDecision.Deny, "plan mode is read-only");
@@ -132,8 +142,12 @@ public sealed class PermissionEngine(PermissionRules rules, PermissionMode mode)
     }
 
     /// <summary>Remembers an "always allow" answer for the rest of the session.</summary>
-    public void AllowForSession(string toolName, ToolAssessment call) =>
+    public void AllowForSession(string toolName, ToolAssessment call)
+    {
+        if (toolName == ExitPlanTool)
+            return; // "always" on a plan means "auto-accept edits", not "never ask about plans again"
         Rules.Allow.Add(toolName.StartsWith("mcp__", StringComparison.Ordinal)
             ? new PermissionRule(toolName, null) // the arguments of an MCP call are rarely the same twice
             : new PermissionRule(toolName, call.Risk == RiskLevel.Exec ? call.Subject.Trim() : call.Subject.Replace('\\', '/')));
+    }
 }
