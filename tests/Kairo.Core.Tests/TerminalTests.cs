@@ -236,7 +236,7 @@ public class ConPtyTests
 
         pty.Dispose();
 
-        Assert.True(capture.Exit.Task.Wait(TimeSpan.FromSeconds(15)), "The shell did not end after Dispose.");
+        await capture.Exit.Task.WaitAsync(TimeSpan.FromSeconds(15)); // throws if the shell did not end after Dispose
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (Process.GetProcessesByName("PING").Length > pingsBefore && DateTime.UtcNow < deadline)
             await Task.Delay(100);
