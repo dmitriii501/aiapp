@@ -100,10 +100,25 @@ public sealed class WriteTool : ITool
         if (File.Exists(path) && !ctx.ReadFiles.Contains(path))
             return ToolResult.Error($"{path} already exists and has not been read in this session. Read it first.");
 
+        var before = File.Exists(path) ? TextFiles.ReadText(path) : "";
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllTextAsync(path, content, new UTF8Encoding(false), ct).ConfigureAwait(false);
         ctx.ReadFiles.Add(path);
-        return new ToolResult($"Wrote {content.Split('\n').Length} lines to {ctx.DisplayPath(path)}.");
+        return new ToolResult($"Wrote {content.Split('\n').Length} lines to {ctx.DisplayPath(path)}.", Diff: UnifiedDiff.Create(before, content));
+    }
+
+    public string? Preview(JsonElement input, ToolContext ctx)
+    {
+        var path = ctx.ResolvePath(ToolInput.RequiredString(input, "file_path"));
+        var content = ToolInput.RequiredString(input, "content");
+        try
+        {
+            return UnifiedDiff.Create(File.Exists(path) ? TextFiles.ReadText(path) : "", content);
+        }
+        catch (ToolInputException)
+        {
+            return null; // binary file
+        }
     }
 }
 
@@ -144,7 +159,39 @@ public sealed class EditTool : ITool
             return ToolResult.Error("old_string is empty. Use Write to create a file.");
 
         var text = TextFiles.ReadText(path);
+        var plan = Plan(text, oldString, newString, replaceAll);
+        if (plan.Error is { } error)
+            return ToolResult.Error(error);
 
+        await File.WriteAllTextAsync(path, plan.Updated!, new UTF8Encoding(false), ct).ConfigureAwait(false);
+        return new ToolResult(
+            $"Edited {ctx.DisplayPath(path)} ({(replaceAll ? plan.Count : 1)} replacement{(replaceAll && plan.Count > 1 ? "s" : "")}).",
+            Diff: UnifiedDiff.Create(text, plan.Updated!));
+    }
+
+    public string? Preview(JsonElement input, ToolContext ctx)
+    {
+        var path = ctx.ResolvePath(ToolInput.RequiredString(input, "file_path"));
+        var oldString = ToolInput.RequiredString(input, "old_string");
+        var newString = ToolInput.RequiredString(input, "new_string");
+        if (!File.Exists(path) || oldString.Length == 0)
+            return null;
+        try
+        {
+            var text = TextFiles.ReadText(path);
+            var plan = Plan(text, oldString, newString, ToolInput.OptionalBool(input, "replace_all"));
+            return plan.Updated is null ? null : UnifiedDiff.Create(text, plan.Updated);
+        }
+        catch (ToolInputException)
+        {
+            return null; // binary file
+        }
+    }
+
+    private sealed record EditPlan(string? Updated, int Count, string? Error);
+
+    private static EditPlan Plan(string text, string oldString, string newString, bool replaceAll)
+    {
         // Models write "\n"; keep Windows line endings intact when the file uses them.
         if (!text.Contains(oldString, StringComparison.Ordinal) && text.Contains("\r\n", StringComparison.Ordinal))
         {
@@ -154,13 +201,12 @@ public sealed class EditTool : ITool
 
         var count = CountOccurrences(text, oldString);
         if (count == 0)
-            return ToolResult.Error("old_string was not found in the file. Read the file again and copy the text exactly.");
+            return new(null, 0, "old_string was not found in the file. Read the file again and copy the text exactly.");
         if (count > 1 && !replaceAll)
-            return ToolResult.Error($"old_string occurs {count} times. Add surrounding context to make it unique, or set replace_all.");
+            return new(null, count, $"old_string occurs {count} times. Add surrounding context to make it unique, or set replace_all.");
 
         var updated = replaceAll ? text.Replace(oldString, newString, StringComparison.Ordinal) : ReplaceFirst(text, oldString, newString);
-        await File.WriteAllTextAsync(path, updated, new UTF8Encoding(false), ct).ConfigureAwait(false);
-        return new ToolResult($"Edited {ctx.DisplayPath(path)} ({(replaceAll ? count : 1)} replacement{(replaceAll && count > 1 ? "s" : "")}).");
+        return new(updated, count, null);
     }
 
     private static int CountOccurrences(string text, string value)

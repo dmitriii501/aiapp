@@ -12,7 +12,8 @@ public enum RiskLevel { Read, Write, Exec, Network, System }
 /// </summary>
 public sealed record ToolAssessment(RiskLevel Risk, string Subject, string Summary);
 
-public sealed record ToolResult(string Content, bool IsError = false)
+/// <summary>Diff is shown to the user only (unified format, see <see cref="UnifiedDiff"/>); the model never sees it.</summary>
+public sealed record ToolResult(string Content, bool IsError = false, string? Diff = null)
 {
     public static ToolResult Error(string message) => new(message, IsError: true);
 }
@@ -28,6 +29,12 @@ public interface ITool
     ToolAssessment Assess(JsonElement input, ToolContext ctx);
 
     Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct);
+
+    /// <summary>
+    /// What the call would change, as a unified diff, for the permission prompt. Best effort: null when there is
+    /// nothing to show or the target cannot be read. Must not throw for bad input.
+    /// </summary>
+    string? Preview(JsonElement input, ToolContext ctx) => null;
 }
 
 /// <summary>Per-session state shared by tools.</summary>

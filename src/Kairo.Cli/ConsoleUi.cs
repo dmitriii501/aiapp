@@ -65,6 +65,9 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
                 return Task.FromResult(PermissionAnswer.Deny);
             }
 
+            EndLine();
+            if (request.Diff is { Length: > 0 } diff)
+                PrintDiff(diff);
             Write(ConsoleColor.Yellow, $"  Allow {request.Tool}? ({request.Reason})  [y] yes  [a] always this session  [n] no: ");
             while (true)
             {
@@ -83,6 +86,17 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
                     return Task.FromResult(a);
                 }
             }
+        }
+    }
+
+    private static void PrintDiff(string diff)
+    {
+        foreach (var line in diff.Split('\n'))
+        {
+            var color = line.StartsWith('+') ? ConsoleColor.Green
+                : line.StartsWith('-') ? ConsoleColor.Red
+                : ConsoleColor.DarkGray;
+            Write(color, "    " + line + "\n");
         }
     }
 

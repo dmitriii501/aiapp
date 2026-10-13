@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import type { Decision, PermissionPrompt as Prompt } from "../bridge/protocol";
+import { DiffView, diffStats } from "./DiffView";
 
 const TITLES: Record<string, string> = {
   write: "Изменение файла",
@@ -57,7 +58,17 @@ export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
   return (
     <div className="permission" role="dialog" aria-label="Подтверждение действия">
       <div className="permission__title">{TITLES[prompt.risk] ?? "Действие"}</div>
-      <pre className="permission__subject">{prompt.subject}</pre>
+      {prompt.diff ? (
+        <>
+          <div className="permission__file">
+            <span className="permission__path">{prompt.subject}</span>
+            <DiffStats diff={prompt.diff} />
+          </div>
+          <DiffView diff={prompt.diff} maxHeight={260} />
+        </>
+      ) : (
+        <pre className="permission__subject">{prompt.subject}</pre>
+      )}
       {outside && <div className="permission__note">Файл находится вне папки проекта.</div>}
       <div className="permission__question">Разрешить?</div>
       <div className="permission__options" role="listbox">
@@ -78,5 +89,14 @@ export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function DiffStats({ diff }: { diff: string }) {
+  const { added, removed } = diffStats(diff);
+  return (
+    <span className="diff-stats">
+      <span className="diff-stats__add">+{added}</span> <span className="diff-stats__del">−{removed}</span>
+    </span>
   );
 }

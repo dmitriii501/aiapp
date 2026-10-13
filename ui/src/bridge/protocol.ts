@@ -83,6 +83,8 @@ export interface TranscriptItem {
   summary?: string;
   output?: string;
   status?: ToolStatus;
+  /** Unified diff (hunks only) of what a write or edit changed. */
+  diff?: string;
 }
 
 export interface PermissionPrompt {
@@ -92,6 +94,8 @@ export interface PermissionPrompt {
   subject: string;
   risk: Risk;
   reason: string;
+  /** Unified diff of what the call would change, when it is a write or edit. */
+  diff?: string;
 }
 
 export interface SessionDetail {
@@ -126,6 +130,7 @@ export interface AgentEvent {
   reason?: string;
   inputTokens?: number;
   outputTokens?: number;
+  diff?: string;
 }
 
 type NoParams = Record<string, never>;

@@ -35,7 +35,8 @@ public sealed record RedactedThinkingPart(string Data) : MessagePart;
 /// <summary>A tool call requested by the model. <see cref="Input"/> is the parsed JSON object.</summary>
 public sealed record ToolCallPart(string Id, string Name, JsonElement Input) : MessagePart;
 
-public sealed record ToolResultPart(string ToolCallId, string Content, bool IsError = false) : MessagePart;
+/// <summary>Diff is for the UI transcript only; providers ignore it.</summary>
+public sealed record ToolResultPart(string ToolCallId, string Content, bool IsError = false, string? Diff = null) : MessagePart;
 
 /// <summary>A tool the model may call. <see cref="InputSchema"/> is a JSON Schema object.</summary>
 public sealed record ToolSpec(string Name, string Description, JsonElement InputSchema);

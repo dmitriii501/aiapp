@@ -102,7 +102,8 @@ public sealed record TranscriptItem(
     string? Tool = null,
     string? Summary = null,
     string? Output = null,
-    string? Status = null);
+    string? Status = null,
+    string? Diff = null);
 
 public sealed record SessionDetail(
     SessionSummary Session,
@@ -118,7 +119,8 @@ public sealed record SessionModeParams(string SessionId, string Mode);
 // ---- Permissions ----
 
 /// <summary>A tool call waiting for the user. Risk: read | write | exec | network | system.</summary>
-public sealed record PermissionPrompt(string RequestId, string Tool, string Summary, string Subject, string Risk, string Reason);
+/// <summary>Diff: unified diff of what a write or edit would change, when there is one.</summary>
+public sealed record PermissionPrompt(string RequestId, string Tool, string Summary, string Subject, string Risk, string Reason, string? Diff = null);
 
 /// <summary>Decision: allow | always | deny.</summary>
 public sealed record PermissionRespondParams(string RequestId, string Decision);
@@ -142,4 +144,5 @@ public sealed record AgentEventDto(
     string? RequestId = null,
     string? Reason = null,
     long? InputTokens = null,
-    long? OutputTokens = null);
+    long? OutputTokens = null,
+    string? Diff = null);

@@ -36,6 +36,8 @@
   --code-bg: #f8f8f8;
   --scrim: rgb(0 0 0 / 0.25);
   --shadow: 0 4px 16px rgb(0 0 0 / 0.16);
+  --diff-add-bg: rgb(46 160 67 / 0.16);
+  --diff-del-bg: rgb(248 81 73 / 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -66,6 +68,9 @@
     --code-bg: #141414;
     --scrim: rgb(0 0 0 / 0.45);
     --shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+
+    --diff-add-bg: rgb(46 160 67 / 0.2);
+    --diff-del-bg: rgb(248 81 73 / 0.2);
   }
 }
 
@@ -790,6 +795,77 @@ select.input {
   overflow-wrap: anywhere;
 }
 
+.diff {
+  margin: 4px 0 0 18px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  font: 12px/1.5 var(--font-mono);
+  user-select: text;
+}
+
+.diff__row {
+  display: flex;
+  min-width: max-content;
+}
+
+.diff__row--add {
+  background: var(--diff-add-bg);
+}
+
+.diff__row--del {
+  background: var(--diff-del-bg);
+}
+
+.diff__no {
+  flex: none;
+  width: calc(var(--diff-digits, 3ch) + 12px);
+  padding: 0 6px;
+  color: var(--faint);
+  text-align: right;
+  user-select: none;
+}
+
+.diff__sign {
+  flex: none;
+  width: 2ch;
+  color: var(--muted);
+  user-select: none;
+}
+
+.diff__row--add .diff__sign {
+  color: var(--ok);
+}
+
+.diff__row--del .diff__sign {
+  color: var(--error);
+}
+
+.diff__text {
+  padding-right: 10px;
+  white-space: pre;
+}
+
+.diff__sep {
+  padding: 0 12px;
+  color: var(--faint);
+  background: var(--widget);
+  user-select: none;
+}
+
+.diff-stats {
+  flex: none;
+  font-family: var(--font-mono);
+}
+
+.diff-stats__add {
+  color: var(--ok);
+}
+
+.diff-stats__del {
+  color: var(--error);
+}
+
 .working {
   display: flex;
   align-items: baseline;
@@ -891,6 +967,26 @@ select.input {
 .permission__title {
   color: var(--text-strong);
   font-weight: 600;
+}
+
+.permission__file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 4px;
+}
+
+.permission__path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission .diff {
+  margin: 0;
 }
 
 .permission__subject {

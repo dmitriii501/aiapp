@@ -175,7 +175,8 @@ public sealed class AgentHost(
                     case ToolCallFinished f:
                         await _notify(new AgentEventDto(id, "tool_finished", ToolCallId: f.Id, Tool: f.Tool,
                             Output: Transcript.Clip(f.Result.Content),
-                            Status: f.Denied ? "denied" : f.Result.IsError ? "error" : "done")).ConfigureAwait(false);
+                            Status: f.Denied ? "denied" : f.Result.IsError ? "error" : "done",
+                            Diff: f.Result.Diff is { Length: > 0 } diff ? diff : null)).ConfigureAwait(false);
                         break;
                     case ModelCallCompleted m:
                         input += m.Usage.InputTokens ?? 0;
@@ -214,7 +215,7 @@ public sealed class AgentHost(
             var requestId = Guid.NewGuid().ToString("N");
             var subject = request.Call.Risk == RiskLevel.Exec ? request.Call.Subject : ctx.DisplayPath(request.Call.Subject);
             var prompt = new PermissionPrompt(requestId, request.Tool, request.Call.Summary, subject,
-                request.Call.Risk.ToString().ToLowerInvariant(), request.Reason);
+                request.Call.Risk.ToString().ToLowerInvariant(), request.Reason, request.Diff is { Length: > 0 } ? request.Diff : null);
             var pending = new PendingPermission(sessionId, prompt, new TaskCompletionSource<PermissionAnswer>(TaskCreationOptions.RunContinuationsAsynchronously));
             host._pending[requestId] = pending;
 

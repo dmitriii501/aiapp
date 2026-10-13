@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import type { Item } from "../store";
 import type { ToolStatus } from "../bridge/protocol";
+import { DiffView, diffStats } from "./DiffView";
 import { Markdown } from "./Markdown";
 
 export function Transcript({ items }: { items: Item[] }) {
@@ -54,7 +55,7 @@ function parseSummary(tool: string, summary: string): string {
 }
 
 /** One-line result under a tool call, like Claude Code's "⎿ Read 42 lines". */
-function resultLine(tool: string, status: RowStatus, output?: string): string {
+function resultLine(tool: string, status: RowStatus, output?: string, diff?: string): string {
   if (status === "running") return "Выполняется…";
   if (status === "waiting") return "Ждёт подтверждения";
   if (status === "denied") return "Отклонено";
@@ -74,9 +75,11 @@ function resultLine(tool: string, status: RowStatus, output?: string): string {
     case "Grep":
       return first === "No matches." ? "Совпадений нет" : `Совпадений: ${lines}`;
     case "Edit":
-      return "Файл изменён";
-    case "Write":
-      return "Файл записан";
+    case "Write": {
+      if (!diff) return tool === "Edit" ? "Файл изменён" : "Файл записан";
+      const { added, removed } = diffStats(diff);
+      return `Добавлено строк: ${added}, удалено: ${removed}`;
+    }
     case "Shell":
       return text === "(no output)" ? "Нет вывода" : lines > 1 ? `${first} (+${lines - 1} строк)` : first;
     default:
@@ -84,10 +87,16 @@ function resultLine(tool: string, status: RowStatus, output?: string): string {
   }
 }
 
-function ToolEntry({ tool, summary, status, output }: { tool: string; summary: string; status: RowStatus; output?: string }) {
+function ToolEntry({ tool, summary, status, output, diff }: { tool: string; summary: string; status: RowStatus; output?: string; diff?: string }) {
   const [open, setOpen] = useState(false);
+  const [diffHidden, setDiffHidden] = useState(false);
   const detail = parseSummary(tool, summary);
-  const expandable = !!output && status !== "running" && status !== "waiting";
+  const finished = status !== "running" && status !== "waiting";
+  // A change is always shown; other output is behind a toggle.
+  const hasDiff = !!diff && status === "done";
+  const expandable = finished && (hasDiff || !!output);
+  const expanded = hasDiff ? !diffHidden : open;
+  const toggle = () => (hasDiff ? setDiffHidden((h) => !h) : setOpen((o) => !o));
 
   return (
     <div className={`entry entry--tool entry--${status}`}>
@@ -97,12 +106,13 @@ function ToolEntry({ tool, summary, status, output }: { tool: string; summary: s
           <span className="tool-call__name">{tool}</span>
           {detail && <span className="tool-call__args">({detail})</span>}
         </div>
-        <button className="tool-result" onClick={() => expandable && setOpen((o) => !o)} disabled={!expandable} aria-expanded={open}>
+        <button className="tool-result" onClick={() => expandable && toggle()} disabled={!expandable} aria-expanded={expanded}>
           <span className="tool-result__elbow">⎿</span>
-          <span className="tool-result__text">{resultLine(tool, status, output)}</span>
-          {expandable && <span className="tool-result__toggle">{open ? "скрыть" : "показать"}</span>}
+          <span className="tool-result__text">{resultLine(tool, status, output, diff)}</span>
+          {expandable && <span className="tool-result__toggle">{expanded ? "скрыть" : "показать"}</span>}
         </button>
-        {open && output && <pre className="tool-output">{output}</pre>}
+        {hasDiff && expanded && <DiffView diff={diff!} />}
+        {!hasDiff && open && output && <pre className="tool-output">{output}</pre>}
       </div>
     </div>
   );

@@ -22,7 +22,7 @@ public sealed record AgentFinished(string Reason) : AgentEvent;
 
 public enum PermissionAnswer { Allow, AllowAlways, Deny }
 
-public sealed record PermissionRequest(string Tool, ToolAssessment Call, string Reason);
+public sealed record PermissionRequest(string Tool, ToolAssessment Call, string Reason, string? Diff = null);
 
 /// <summary>How the host asks the user. CLI prompts in the terminal; the desktop app shows a native card.</summary>
 public interface IPermissionPrompt
@@ -129,7 +129,7 @@ public sealed class Agent(
                         ? (error, false)
                         : await ExecuteAsync(c, prepared.Tool!, prepared.Assessment!, ct).ConfigureAwait(false);
 
-                    results.Add(new ToolResultPart(c.Id, result.Content, result.IsError));
+                    results.Add(new ToolResultPart(c.Id, result.Content, result.IsError, result.Diff));
                     yield return new ToolCallFinished(c.Id, c.Name, result, denied);
                 }
             }
@@ -172,7 +172,7 @@ public sealed class Agent(
 
         if (verdict.Decision == PermissionDecision.Ask)
         {
-            var answer = await prompt.AskAsync(new PermissionRequest(call.Name, assessment, verdict.Reason), ct).ConfigureAwait(false);
+            var answer = await prompt.AskAsync(new PermissionRequest(call.Name, assessment, verdict.Reason, PreviewOf(tool, call)), ct).ConfigureAwait(false);
             if (answer == PermissionAnswer.AllowAlways)
                 permissions.AllowForSession(call.Name, assessment);
             verdict = answer == PermissionAnswer.Deny
@@ -194,6 +194,18 @@ public sealed class Agent(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return (ToolResult.Error($"{call.Name} failed: {ex.Message}"), false);
+        }
+    }
+
+    private string? PreviewOf(ITool tool, ToolCallPart call)
+    {
+        try
+        {
+            return tool.Preview(call.Input, toolContext);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ToolInputException)
+        {
+            return null;
         }
     }
 

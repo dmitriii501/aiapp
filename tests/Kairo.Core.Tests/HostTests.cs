@@ -100,6 +100,7 @@ public class HostTests : IDisposable
 
         Assert.Equal("write", ask.Risk);
         Assert.Equal("out.txt", ask.Subject);
+        Assert.Equal("@@ -1,0 +1,1 @@\n+hi", ask.Diff);
         Assert.Single(host.Open(id).PendingPermissions);
         Assert.Throws<RpcException>(() => host.Send(id, "ещё"));
 
@@ -110,6 +111,7 @@ public class HostTests : IDisposable
         Assert.Contains(_events, e => e.Type == "permission_resolved" && e.RequestId == ask.RequestId);
         var tool = host.Open(id).Items.Single(i => i.Kind == "tool");
         Assert.Equal(("Write", "done"), (tool.Tool, tool.Status));
+        Assert.Equal(ask.Diff, tool.Diff);
         Assert.Throws<RpcException>(() => host.RespondPermission(ask.RequestId, "allow"));
     }
 

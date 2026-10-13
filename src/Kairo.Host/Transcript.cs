@@ -22,7 +22,7 @@ public static class Transcript
                 foreach (var result in message.Parts.OfType<ToolResultPart>())
                 {
                     if (toolRows.TryGetValue(result.ToolCallId, out var row))
-                        items[row] = items[row] with { Output = Clip(result.Content), Status = StatusOf(result.Content, result.IsError) };
+                        items[row] = items[row] with { Output = Clip(result.Content), Status = StatusOf(result.Content, result.IsError), Diff = result.Diff is { Length: > 0 } ? result.Diff : null };
                 }
                 if (message.Text is { Length: > 0 } text)
                     items.Add(new TranscriptItem("user", Text: text));

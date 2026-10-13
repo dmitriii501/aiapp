@@ -41,6 +41,21 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
     event({ sessionId: id, type: "tool_finished", toolCallId: "t1", tool: "Glob", status: "done", output: "src/Program.cs\nsrc/App.cs" });
 
     event({ sessionId: id, type: "tool_started", toolCallId: "t2", tool: "Edit", summary: "Edit(src/Program.cs)" });
+    const diff = [
+      "@@ -1,7 +1,8 @@",
+      " using System;",
+      " ",
+      " namespace Demo;",
+      " ",
+      " internal static class Program",
+      " {",
+      "-    private static void Main() => Console.WriteLine(\"Hello, world\");",
+      "+    private static void Main()",
+      "+    {",
+      "+        Console.WriteLine(\"Hello, Kairo\");",
+      "+    }",
+      " }",
+    ].join("\n");
     const permission: PermissionPrompt = {
       requestId: "r" + Date.now(),
       tool: "Edit",
@@ -48,6 +63,7 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       subject: "src/Program.cs",
       risk: "write",
       reason: "write needs approval",
+      diff,
     };
     event({ sessionId: id, type: "permission", permission });
     const decision = await new Promise<string>((resolve) => waiting.set(permission.requestId, resolve));
@@ -60,6 +76,7 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       tool: "Edit",
       status: denied ? "denied" : "done",
       output: denied ? "Permission denied (the user declined)." : "Edited src/Program.cs (1 replacement).",
+      diff: denied ? undefined : diff,
     });
 
     const answer = denied

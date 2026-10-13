@@ -17,7 +17,7 @@ import { Methods, Notifications } from "./bridge/protocol";
 export type Item =
   | { id: string; kind: "user"; text: string }
   | { id: string; kind: "assistant"; text: string; streaming: boolean }
-  | { id: string; kind: "tool"; toolCallId: string; tool: string; summary: string; output?: string; status: ToolStatus | "waiting" }
+  | { id: string; kind: "tool"; toolCallId: string; tool: string; summary: string; output?: string; diff?: string; status: ToolStatus | "waiting" }
   | { id: string; kind: "permission"; prompt: PermissionPrompt }
   | { id: string; kind: "error"; text: string }
   | { id: string; kind: "notice"; text: string };
@@ -101,7 +101,7 @@ export const useStore = create<State>((set, get) => {
         case "tool_finished":
           return {
             ...chat,
-            items: items.map((i) => (i.kind === "tool" && i.toolCallId === e.toolCallId ? { ...i, status: e.status ?? "done", output: e.output } : i)),
+            items: items.map((i) => (i.kind === "tool" && i.toolCallId === e.toolCallId ? { ...i, status: e.status ?? "done", output: e.output, diff: e.diff } : i)),
           };
         case "permission":
           endStreaming();
@@ -164,7 +164,7 @@ export const useStore = create<State>((set, get) => {
             case "assistant":
               return { id: nextId(), kind: "assistant", text: t.text ?? "", streaming: false };
             case "tool":
-              return { id: nextId(), kind: "tool", toolCallId: t.toolCallId!, tool: t.tool!, summary: t.summary ?? t.tool!, output: t.output, status: t.status ?? "done" };
+              return { id: nextId(), kind: "tool", toolCallId: t.toolCallId!, tool: t.tool!, summary: t.summary ?? t.tool!, output: t.output, diff: t.diff, status: t.status ?? "done" };
             default:
               return { id: nextId(), kind: "error", text: t.text ?? "" };
           }
