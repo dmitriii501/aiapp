@@ -41,6 +41,20 @@
     <ProjectReference Include="..\Kairo.Windows\Kairo.Windows.csproj" />
   </ItemGroup>
 
+  <!--
+    An unpackaged WinUI app cannot start without its compiled XAML (App.xbf, MainWindow.xbf) and resource index (Kairo.pri), and
+    "dotnet publish" leaves them out of the publish folder. Add them from the build output.
+  -->
+  <Target Name="KairoPublishXaml" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <_KairoXaml Include="$(OutDir)App.xbf;$(OutDir)MainWindow.xbf;$(OutDir)$(AssemblyName).pri" />
+      <ResolvedFileToPublish Include="@(_KairoXaml)" Condition="Exists('%(FullPath)')">
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
   <!-- Rebuilds ui/ when its sources change and ships ui/dist next to the exe as "ui\". Set KairoSkipUi=true to skip. -->
   <ItemGroup>
     <KairoUiSource Include="$(UiDir)src\**\*;$(UiDir)index.html;$(UiDir)package.json;$(UiDir)vite.config.ts" />
