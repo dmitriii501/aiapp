@@ -1,3 +1,4 @@
+using Kairo.Core.Hooks;
 using Kairo.Core.Permissions;
 using Tomlyn;
 using Tomlyn.Model;
@@ -30,6 +31,12 @@ namespace Kairo.Core.Config;
 /// window = 200000                                # tokens; 0 turns automatic compaction off
 /// compact_at = 0.8                               # summarize long sessions at this share of the window
 ///
+/// [[hooks]]                                    # commands that run on events (user file only)
+/// event = "PreToolUse"                           # PreToolUse | PostToolUse | UserPromptSubmit | Stop
+/// matcher = "Shell"                              # optional tool names, e.g. "Edit|Write" or "mcp__*"
+/// command = "pwsh -File C:/hooks/check.ps1"      # gets the event as JSON on stdin; exit code 2 blocks
+/// timeout = 30
+///
 /// [web]
 /// search = "searxng"                             # "brave" (key in settings) or "searxng"
 /// searxng_url = "http://localhost:8080"          # your SearXNG instance, JSON format enabled
@@ -59,6 +66,9 @@ public sealed class KairoConfig
 
     /// <summary>Address of a SearXNG instance (<c>[web] searxng_url</c>). Read from the user's file only: it receives the agent's queries.</summary>
     public string? SearxngUrl { get; set; }
+
+    /// <summary>Hooks (<c>[[hooks]]</c>). Commands that run on the user's machine: read from the user's file only.</summary>
+    public List<HookConfig> Hooks { get; } = [];
 
     public const int DefaultContextWindow = 128_000;
     public const double DefaultCompactAt = 0.8;
@@ -93,9 +103,13 @@ public sealed class KairoConfig
             // Updates replace the app itself: a repository must not be able to steer them.
             // Likewise the search backend: it receives what the agent searches for.
             var userMode = config.Mode;
+            var userHooks = config.Hooks.ToList();
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
+            // A project cannot add commands that run on the user's machine.
+            config.Hooks.Clear();
+            config.Hooks.AddRange(userHooks);
             // A repository cannot switch off the user's confirmations.
             if (config.Mode == PermissionMode.Bypass && userMode != PermissionMode.Bypass)
                 config.Mode = userMode;
@@ -191,6 +205,21 @@ public sealed class KairoConfig
                 var share = at switch { double d => d, long l => l, _ => (double?)null };
                 if (share is { } s)
                     CompactAt = Math.Clamp(s, 0.3, 0.95);
+            }
+        }
+
+        if (table.TryGetValue("hooks", out var h) && h is TomlTableArray hookTables)
+        {
+            foreach (var hook in hookTables)
+            {
+                var name = String(hook, "event");
+                if (!Enum.TryParse<HookEvent>(name, ignoreCase: true, out var hookEvent))
+                    throw new FormatException($"{source}: unknown hook event '{name}'. Use PreToolUse, PostToolUse, UserPromptSubmit or Stop.");
+                var command = String(hook, "command");
+                if (string.IsNullOrWhiteSpace(command))
+                    throw new FormatException($"{source}: a {name} hook has no command.");
+                var seconds = hook.TryGetValue("timeout", out var t) && t is long l ? (int)Math.Clamp(l, 1, 600) : 30;
+                Hooks.Add(new HookConfig(hookEvent, String(hook, "matcher"), command, seconds));
             }
         }
 

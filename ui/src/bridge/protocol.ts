@@ -146,6 +146,7 @@ export type AgentEventType =
   | "mode"
   | "compacting"
   | "compacted"
+  | "notice"
   | "error"
   | "turn_finished";
 

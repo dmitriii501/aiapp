@@ -43,6 +43,11 @@ internal sealed class ConsoleUi(bool interactive) : IPermissionPrompt
                     _cacheRead += m.Usage.CacheReadTokens ?? 0;
                     break;
 
+                case HookNotice h:
+                    EndLine();
+                    Write(ConsoleColor.Yellow, $"  hook: {h.Text}\n");
+                    break;
+
                 case ContextCompacting:
                     EndLine();
                     Write(ConsoleColor.DarkGray, "  compacting the conversation…\n");

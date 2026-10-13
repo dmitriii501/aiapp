@@ -125,7 +125,10 @@ var agent = new Agent(
     new ToolContext(cwd),
     SystemPrompt.Build(cwd, instructions, DateTimeOffset.Now, mode),
     new AgentOptions(model, options.Effort ?? config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
-    Compaction.Effective(history));
+    Compaction.Effective(history))
+{
+    Hooks = config.Hooks.Count > 0 ? new ProcessHooks(config.Hooks) : null,
+};
 
 // Persist every message; repaired messages that were not stored yet are saved too.
 var persisted = session is null ? 0 : store.LoadMessages(session.Id).Count;

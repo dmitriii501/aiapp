@@ -1,3 +1,4 @@
+using Kairo.Core.Hooks;
 using Kairo.Core.Models;
 using Kairo.Core.Permissions;
 using Kairo.Core.Tools;
@@ -42,7 +43,8 @@ public sealed class SubagentRunner(
     IPermissionPrompt permissionPrompt,
     ToolContext toolContext,
     string systemPrompt,
-    AgentOptions options) : ISubagents
+    AgentOptions options,
+    IHooks? hooks = null) : ISubagents
 {
     public const int MaxModelCalls = 40;
     public const int MaxResultChars = 30_000;
@@ -59,7 +61,7 @@ public sealed class SubagentRunner(
             + " main agent will see. Be specific: file paths, line numbers, names, and what you did or did not verify.";
 
         var agent = new Agent(provider, registry, permissions, permissionPrompt, toolContext, system,
-            options with { MaxModelCalls = MaxModelCalls, Subagent = true });
+            options with { MaxModelCalls = MaxModelCalls, Subagent = true }) { Hooks = hooks };
 
         var toolCalls = 0;
         string? stopped = null;

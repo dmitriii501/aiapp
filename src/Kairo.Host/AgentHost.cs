@@ -172,7 +172,10 @@ public sealed class AgentHost(
             live.Tools,
             SystemPrompt.Build(cwd, SystemPrompt.FindInstructionFiles(cwd, settings.UserConfigDirectory), DateTimeOffset.Now, live.Permissions.Mode),
             new AgentOptions(ProviderFactory.ModelOf(config), config.Effort, ContextWindow: config.EffectiveContextWindow, CompactAt: config.EffectiveCompactAt),
-            Compaction.Effective(live.History));
+            Compaction.Effective(live.History))
+        {
+            Hooks = config.Hooks.Count > 0 ? new ProcessHooks(config.Hooks) : null,
+        };
 
         agent.MessageAppended += message =>
         {
@@ -284,6 +287,9 @@ public sealed class AgentHost(
                     case ModelCallCompleted m:
                         input += m.Usage.InputTokens ?? 0;
                         output += m.Usage.OutputTokens ?? 0;
+                        break;
+                    case HookNotice n:
+                        await _notify(new AgentEventDto(id, "notice", Text: n.Text)).ConfigureAwait(false);
                         break;
                     case ContextCompacting:
                         await _notify(new AgentEventDto(id, "compacting")).ConfigureAwait(false);

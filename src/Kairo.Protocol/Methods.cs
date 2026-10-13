@@ -181,8 +181,8 @@ public sealed record PermissionRespondParams(string RequestId, string Decision);
 
 /// <summary>
 /// One streamed event of a turn. Type: turn_started | text | tool_started | tool_finished | permission |
-/// permission_resolved | checkpoint | mode | compacting | compacted | error | turn_finished. For "mode", Text is the new permission mode;
-/// for "compacted", Text is the summary and TokensBefore/TokensAfter are size estimates. Only the fields relevant to the type are set.
+/// permission_resolved | checkpoint | mode | compacting | compacted | notice | error | turn_finished. For "mode", Text is the new permission mode;
+/// for "notice", Text is a line for the user (a hook stopped something); for "compacted", Text is the summary and TokensBefore/TokensAfter are size estimates. Only the fields relevant to the type are set.
 /// </summary>
 public sealed record AgentEventDto(
     string SessionId,

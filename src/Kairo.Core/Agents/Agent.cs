@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Kairo.Core.Hooks;
 using Kairo.Core.Models;
 using Kairo.Core.Permissions;
 using Kairo.Core.Tools;
@@ -13,6 +14,9 @@ public sealed record AgentTextDelta(string Text) : AgentEvent;
 public sealed record ToolCallStarted(string Id, string Tool, string Summary, string? Detail = null) : AgentEvent;
 
 public sealed record ToolCallFinished(string Id, string Tool, ToolResult Result, bool Denied) : AgentEvent;
+
+/// <summary>A hook stopped something or asked the model to carry on; the user should see why.</summary>
+public sealed record HookNotice(string Text) : AgentEvent;
 
 /// <summary>One model call finished.</summary>
 public sealed record ModelCallCompleted(string? StopReason, Usage Usage) : AgentEvent;
@@ -75,6 +79,12 @@ public sealed class Agent(
 {
     private readonly List<ChatMessage> _history = [.. history ?? []];
 
+    /// <summary>The user's hooks (from config.toml); null when there are none.</summary>
+    public IHooks? Hooks { get; init; }
+
+    /// <summary>How many times a Stop hook may send the model back to work in one run.</summary>
+    private const int MaxStopContinuations = 2;
+
     /// <summary>Context size reported by the model's last call (tokens): a better guide than the estimate.</summary>
     private long _lastContextTokens;
 
@@ -90,7 +100,7 @@ public sealed class Agent(
     public async IAsyncEnumerable<AgentEvent> RunAsync(string userText, string? note = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (!options.Subagent)
-            toolContext.Subagents = new SubagentRunner(provider, tools, permissions, prompt, toolContext, systemPrompt, options);
+            toolContext.Subagents = new SubagentRunner(provider, tools, permissions, prompt, toolContext, systemPrompt, options, Hooks);
 
         var compactions = 0;
         if (ShouldCompact(compactions))
@@ -100,9 +110,23 @@ public sealed class Agent(
             yield return await CompactAsync(null, ct).ConfigureAwait(false);
         }
 
+        if (!options.Subagent && Hooks is { } promptHooks && promptHooks.Has(HookEvent.UserPromptSubmit))
+        {
+            var outcome = await promptHooks.RunAsync(new HookInput(HookEvent.UserPromptSubmit, toolContext.WorkingDirectory, Prompt: userText), ct).ConfigureAwait(false);
+            if (outcome.Blocked)
+            {
+                yield return new HookNotice($"The prompt was stopped by a hook: {outcome.Message}");
+                yield return new AgentFinished("hook_blocked");
+                yield break;
+            }
+            if (outcome.Context is { Length: > 0 } extra)
+                note = note is { Length: > 0 } ? note + "\n\n" + extra : extra;
+        }
+
         Append(note is { Length: > 0 }
             ? new ChatMessage(ChatRole.User, [new TextPart(ChatMessage.NoteOpen + note + ChatMessage.NoteClose + "\n\n"), new TextPart(userText)])
             : ChatMessage.UserText(userText));
+        var stopContinuations = 0;
 
         for (var call = 0; call < options.MaxModelCalls; call++)
         {
@@ -140,6 +164,19 @@ public sealed class Agent(
             var calls = response.Message.Parts.OfType<ToolCallPart>().ToList();
             if (calls.Count == 0)
             {
+                // A Stop hook can send the model back to work, e.g. when the tests it runs are still failing.
+                if (!options.Subagent && stopContinuations < MaxStopContinuations && Hooks is { } stopHooks && stopHooks.Has(HookEvent.Stop)
+                    && response.StopReason is null or "end_turn" or "stop")
+                {
+                    var outcome = await stopHooks.RunAsync(new HookInput(HookEvent.Stop, toolContext.WorkingDirectory), ct).ConfigureAwait(false);
+                    if (outcome.Blocked)
+                    {
+                        stopContinuations++;
+                        Append(new ChatMessage(ChatRole.User, [new TextPart(ChatMessage.NoteOpen + "A hook asks you to continue: " + outcome.Message + ChatMessage.NoteClose)]));
+                        yield return new HookNotice($"A hook asked the agent to continue: {outcome.Message}");
+                        continue;
+                    }
+                }
                 yield return new AgentFinished(response.StopReason ?? "end_turn");
                 yield break;
             }
@@ -225,6 +262,27 @@ public sealed class Agent(
     }
 
     private async Task<(ToolResult Result, bool Denied)> ExecuteAsync(ToolCallPart call, ITool tool, ToolAssessment assessment, CancellationToken ct)
+    {
+        // PreToolUse hooks run before the permission check: a hook can only make a call stricter, never allow what the rules deny.
+        if (Hooks is { } pre && pre.Has(HookEvent.PreToolUse))
+        {
+            var outcome = await pre.RunAsync(new HookInput(HookEvent.PreToolUse, toolContext.WorkingDirectory, call.Name, call.Input), ct).ConfigureAwait(false);
+            if (outcome.Blocked)
+                return (ToolResult.Error($"Blocked by a hook: {outcome.Message}"), true);
+        }
+
+        var (result, denied) = await CheckAndRunAsync(call, tool, assessment, ct).ConfigureAwait(false);
+
+        if (!denied && Hooks is { } post && post.Has(HookEvent.PostToolUse))
+        {
+            var outcome = await post.RunAsync(new HookInput(HookEvent.PostToolUse, toolContext.WorkingDirectory, call.Name, call.Input, result.Content), ct).ConfigureAwait(false);
+            if (outcome.Blocked)
+                result = result with { Content = result.Content + "\n\n[hook] " + outcome.Message };
+        }
+        return (result, denied);
+    }
+
+    private async Task<(ToolResult Result, bool Denied)> CheckAndRunAsync(ToolCallPart call, ITool tool, ToolAssessment assessment, CancellationToken ct)
     {
         var verdict = permissions.Evaluate(call.Name, assessment, toolContext);
 

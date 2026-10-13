@@ -168,6 +168,10 @@ export const useStore = create<State>((set, get) => {
               .filter((i) => !(i.kind === "permission" && i.prompt.requestId === e.requestId))
               .map((i) => (i.kind === "tool" && i.status === "waiting" ? { ...i, status: "running" as const } : i)),
           };
+        case "notice":
+          endStreaming();
+          items.push({ id: nextId(), kind: "notice", text: e.text ?? "" });
+          return { ...chat, items };
         case "compacting":
           endStreaming();
           items.push({ id: nextId(), kind: "compaction", pending: true });
