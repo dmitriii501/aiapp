@@ -1,0 +1,135 @@
+import type { RpcMessage } from "./bridge";
+import type { AgentEvent, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, Workspace } from "./protocol";
+import { Methods, Notifications } from "./protocol";
+
+// In-memory stand-in for the core, so the UI can be developed with `npm run dev` in a browser.
+// It mimics the real event flow: text, a tool call that needs approval, then a reply.
+
+export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => void {
+  const settings: Settings = {
+    provider: "anthropic",
+    model: "claude-opus-5-5",
+    mode: "default",
+    providers: [
+      { id: "anthropic", hasKey: true },
+      { id: "openai-compatible", hasKey: false },
+    ],
+    ready: true,
+  };
+  const workspaces: Workspace[] = [{ path: "C:\\Users\\dev\\projects\\kairo", name: "kairo" }];
+  const sessions = new Map<string, { summary: SessionSummary; items: TranscriptItem[]; mode: Mode }>();
+  const waiting = new Map<string, (decision: string) => void>();
+
+  const notify = (method: string, params: unknown) => reply({ jsonrpc: "2.0", method, params });
+  const event = (e: AgentEvent) => notify(Notifications.AgentEvent, e);
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function runTurn(id: string, text: string) {
+    const s = sessions.get(id)!;
+    s.items.push({ kind: "user", text });
+    if (s.summary.title === "Новая сессия") s.summary.title = text.slice(0, 60);
+    s.summary.running = true;
+    event({ sessionId: id, type: "turn_started" });
+    notify(Notifications.SessionsChanged, {});
+
+    for (const chunk of ["Посмотрю, ", "как устроен ", "проект.\n\n"]) {
+      await sleep(120);
+      event({ sessionId: id, type: "text", text: chunk });
+    }
+    event({ sessionId: id, type: "tool_started", toolCallId: "t1", tool: "Glob", summary: "Glob(**/*.cs)" });
+    await sleep(300);
+    event({ sessionId: id, type: "tool_finished", toolCallId: "t1", tool: "Glob", status: "done", output: "src/Program.cs\nsrc/App.cs" });
+
+    event({ sessionId: id, type: "tool_started", toolCallId: "t2", tool: "Edit", summary: "Edit(src/Program.cs)" });
+    const permission: PermissionPrompt = {
+      requestId: "r" + Date.now(),
+      tool: "Edit",
+      summary: "Edit(src/Program.cs)",
+      subject: "src/Program.cs",
+      risk: "write",
+      reason: "write needs approval",
+    };
+    event({ sessionId: id, type: "permission", permission });
+    const decision = await new Promise<string>((resolve) => waiting.set(permission.requestId, resolve));
+    event({ sessionId: id, type: "permission_resolved", requestId: permission.requestId });
+    const denied = decision === "deny";
+    event({
+      sessionId: id,
+      type: "tool_finished",
+      toolCallId: "t2",
+      tool: "Edit",
+      status: denied ? "denied" : "done",
+      output: denied ? "Permission denied (the user declined)." : "Edited src/Program.cs (1 replacement).",
+    });
+
+    const answer = denied
+      ? "Хорошо, файл не трогаю. Могу предложить изменение текстом."
+      : "Готово. Изменил **src/Program.cs**:\n\n```csharp\nConsole.WriteLine(\"Hello, Kairo\");\n```\n\n| Файл | Изменение |\n|---|---|\n| `src/Program.cs` | строка 3 |";
+    for (const word of answer.split(/(?<=\s)/)) {
+      await sleep(25);
+      event({ sessionId: id, type: "text", text: word });
+    }
+    s.summary.running = false;
+    s.summary.updatedAt = new Date().toISOString();
+    event({ sessionId: id, type: "turn_finished", reason: "end_turn", inputTokens: 1200, outputTokens: 90 });
+    notify(Notifications.SessionsChanged, {});
+  }
+
+  function handle(m: RpcMessage): unknown {
+    const p = (m.params ?? {}) as Record<string, string>;
+    switch (m.method) {
+      case Methods.AppInfo:
+        return { name: "Kairo", version: "dev", runtime: "browser", os: navigator.platform, host: "mock" };
+      case Methods.SettingsGet:
+        return settings;
+      case Methods.SettingsUpdate:
+        Object.assign(settings, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
+        return settings;
+      case Methods.SecretSet:
+        settings.providers = settings.providers.map((x) => (x.id === p.provider ? { ...x, hasKey: p.key.length > 0 } : x));
+        settings.ready = settings.providers.some((x) => x.id === settings.provider && x.hasKey);
+        return settings;
+      case Methods.WorkspacePick:
+        return { workspace: workspaces[0] };
+      case Methods.WorkspaceList:
+        return { workspaces };
+      case Methods.SessionList:
+        return { sessions: [...sessions.values()].map((s) => s.summary).reverse() };
+      case Methods.SessionCreate: {
+        const id = Math.random().toString(16).slice(2, 14);
+        const summary = { id, title: "Новая сессия", workingDirectory: p.workingDirectory, updatedAt: new Date().toISOString(), running: false };
+        sessions.set(id, { summary, items: [], mode: settings.mode });
+        notify(Notifications.SessionsChanged, {});
+        return summary;
+      }
+      case Methods.SessionOpen: {
+        const s = sessions.get(p.sessionId)!;
+        return { session: s.summary, items: s.items, mode: s.mode, model: settings.model, pendingPermissions: [] };
+      }
+      case Methods.SessionSend:
+        void runTurn(p.sessionId, p.text);
+        return { success: true };
+      case Methods.SessionSetMode:
+        sessions.get(p.sessionId)!.mode = p.mode as Mode;
+        return { success: true };
+      case Methods.SessionCancel:
+        return { success: true };
+      case Methods.PermissionRespond:
+        waiting.get(p.requestId)?.(p.decision);
+        waiting.delete(p.requestId);
+        return { success: true };
+      default:
+        throw new Error(`Method '${m.method}' not found.`);
+    }
+  }
+
+  return (m) => {
+    queueMicrotask(() => {
+      try {
+        reply({ jsonrpc: "2.0", id: m.id, result: handle(m) });
+      } catch (e) {
+        reply({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: (e as Error).message } });
+      }
+    });
+  };
+}

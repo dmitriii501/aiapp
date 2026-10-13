@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: UI — install, typecheck, build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: .NET — build
+        run: dotnet build Kairo.slnx -c Release
+
+      - name: .NET — test
+        run: dotnet test Kairo.slnx -c Release --no-build

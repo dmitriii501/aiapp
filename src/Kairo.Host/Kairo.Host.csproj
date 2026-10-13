@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kairo.Core\Kairo.Core.csproj" />
+    <ProjectReference Include="..\Kairo.Providers\Kairo.Providers.csproj" />
+    <ProjectReference Include="..\Kairo.Tools\Kairo.Tools.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Kairo.Core.Tests" />
+  </ItemGroup>
+
+</Project>

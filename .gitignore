@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+*.binlog
+artifacts/
+
+# Node / UI
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+
+# Generated
+ui/src/protocol/generated/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# OS / editors
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/

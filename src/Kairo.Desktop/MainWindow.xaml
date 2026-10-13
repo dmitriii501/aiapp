@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Kairo.Desktop.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Kairo">
+
+    <!-- Solid, editor-style chrome: the title bar uses the system base background; the web UI matches it. -->
+    <Grid Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="34" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Native title bar: drag region and caption live in XAML, not in the web UI. -->
+        <Grid x:Name="AppTitleBar" Padding="16,0,0,0">
+            <TextBlock
+                VerticalAlignment="Center"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Kairo" />
+        </Grid>
+
+        <!-- Transparent until the page paints, so there is no white flash on start. -->
+        <WebView2 x:Name="Web" Grid.Row="1" DefaultBackgroundColor="Transparent" />
+    </Grid>
+</Window>

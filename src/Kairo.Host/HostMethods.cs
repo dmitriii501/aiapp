@@ -1,0 +1,72 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
+using Kairo.Core.Rpc;
+using Kairo.Core.Sessions;
+using Kairo.Protocol;
+
+namespace Kairo.Host;
+
+/// <summary>Registers every protocol method on a dispatcher. This list is the whole surface the UI can reach.</summary>
+public static class HostMethods
+{
+    public static void Register(
+        RpcDispatcher rpc,
+        AgentHost host,
+        SettingsService settings,
+        SessionStore store,
+        Func<Task<string?>> pickFolder,
+        string hostName)
+    {
+        var ctx = ProtocolJsonContext.Default;
+
+        rpc.Register(Methods.AppInfo, ctx.Empty, ctx.AppInfo, (_, _) => Task.FromResult(new AppInfo(
+            Name: "Kairo",
+            Version: typeof(HostMethods).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0",
+            Runtime: RuntimeInformation.FrameworkDescription,
+            Os: RuntimeInformation.OSDescription,
+            Host: hostName)));
+
+        rpc.Register(Methods.SettingsGet, ctx.Empty, ctx.Settings, (_, _) => Task.FromResult(settings.Get()));
+        rpc.Register(Methods.SettingsUpdate, ctx.SettingsUpdate, ctx.Settings, (p, _) => Task.FromResult(settings.Update(p)));
+        rpc.Register(Methods.SecretSet, ctx.SecretSetParams, ctx.Settings, (p, _) => Task.FromResult(settings.SetSecret(p)));
+
+        rpc.Register(Methods.WorkspacePick, ctx.Empty, ctx.WorkspacePickResult, async (_, _) =>
+        {
+            var path = await pickFolder().ConfigureAwait(false);
+            if (path is null)
+                return new WorkspacePickResult(null);
+            store.TouchWorkspace(path);
+            return new WorkspacePickResult(ToWorkspace(path));
+        });
+        rpc.Register(Methods.WorkspaceList, ctx.Empty, ctx.WorkspaceListResult, (_, _) =>
+            Task.FromResult(new WorkspaceListResult(store.ListWorkspaces().Where(Directory.Exists).Select(ToWorkspace).ToList())));
+
+        rpc.Register(Methods.SessionList, ctx.Empty, ctx.SessionListResult, (_, _) => Task.FromResult(new SessionListResult(host.List())));
+        rpc.Register(Methods.SessionCreate, ctx.SessionCreateParams, ctx.SessionSummary, (p, _) => Task.FromResult(host.Create(p.WorkingDirectory)));
+        rpc.Register(Methods.SessionOpen, ctx.SessionRef, ctx.SessionDetail, (p, _) => Task.FromResult(host.Open(p.SessionId)));
+        rpc.Register(Methods.SessionSend, ctx.SessionSendParams, ctx.Ok, (p, _) =>
+        {
+            host.Send(p.SessionId, p.Text);
+            return Task.FromResult(new Ok());
+        });
+        rpc.Register(Methods.SessionCancel, ctx.SessionRef, ctx.Ok, (p, _) =>
+        {
+            host.Cancel(p.SessionId);
+            return Task.FromResult(new Ok());
+        });
+        rpc.Register(Methods.SessionSetMode, ctx.SessionModeParams, ctx.Ok, (p, _) =>
+        {
+            host.SetMode(p.SessionId, p.Mode);
+            return Task.FromResult(new Ok());
+        });
+
+        rpc.Register(Methods.PermissionRespond, ctx.PermissionRespondParams, ctx.Ok, (p, _) =>
+        {
+            host.RespondPermission(p.RequestId, p.Decision);
+            return Task.FromResult(new Ok());
+        });
+    }
+
+    private static Workspace ToWorkspace(string path) =>
+        new(path, Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)) is { Length: > 0 } name ? name : path);
+}

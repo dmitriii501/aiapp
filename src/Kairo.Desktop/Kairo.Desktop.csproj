@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Kairo.Desktop</RootNamespace>
+    <AssemblyName>Kairo</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UseWinUI>true</UseWinUI>
+    <!-- Unpackaged, self-contained Windows App SDK: no MSIX and no separate runtime install (installer choice: OPEN-QUESTIONS #1). -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <UiDir>$(MSBuildThisFileDirectory)..\..\ui\</UiDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kairo.Host\Kairo.Host.csproj" />
+    <ProjectReference Include="..\Kairo.Windows\Kairo.Windows.csproj" />
+  </ItemGroup>
+
+  <!-- Rebuilds ui/ when its sources change and ships ui/dist next to the exe as "ui\". Set KairoSkipUi=true to skip. -->
+  <ItemGroup>
+    <KairoUiSource Include="$(UiDir)src\**\*;$(UiDir)index.html;$(UiDir)package.json;$(UiDir)vite.config.ts" />
+  </ItemGroup>
+
+  <Target Name="KairoBuildUi" Inputs="@(KairoUiSource)" Outputs="$(UiDir)dist\index.html" Condition="'$(KairoSkipUi)' != 'true'">
+    <Exec Condition="!Exists('$(UiDir)node_modules')" Command="npm ci" WorkingDirectory="$(UiDir)" />
+    <Exec Command="npm run build" WorkingDirectory="$(UiDir)" />
+  </Target>
+
+  <Target Name="KairoIncludeUi" DependsOnTargets="KairoBuildUi" BeforeTargets="AssignTargetPaths" Condition="'$(KairoSkipUi)' != 'true'">
+    <ItemGroup>
+      <_KairoUiFile Include="$(UiDir)dist\**\*" />
+      <Content Include="@(_KairoUiFile)">
+        <Link>ui\%(_KairoUiFile.RecursiveDir)%(_KairoUiFile.Filename)%(_KairoUiFile.Extension)</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+  </Target>
+
+</Project>

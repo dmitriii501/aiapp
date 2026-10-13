@@ -1,0 +1,165 @@
+using Kairo.Core.Config;
+using Kairo.Core.Rpc;
+using Kairo.Core.Sessions;
+using Kairo.Host;
+using Kairo.Protocol;
+using Kairo.Windows;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.Web.WebView2.Core;
+using Windows.Graphics;
+using Windows.Storage.Pickers;
+using Windows.System;
+
+namespace Kairo.Desktop;
+
+public sealed partial class MainWindow : Window
+{
+    private const string AppHost = "app.kairo.local";
+
+    private readonly RpcDispatcher _rpc;
+    private readonly SessionStore _store;
+    private string _origin = "";
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+        AppWindow.Resize(new SizeInt32(1280, 820));
+
+        // Core → UI. Handlers run off the UI thread, so marshal every send back to it.
+        _rpc = new RpcDispatcher(json =>
+        {
+            DispatcherQueue.TryEnqueue(() => Web.CoreWebView2?.PostWebMessageAsJson(json));
+            return Task.CompletedTask;
+        });
+
+        _store = new SessionStore(SessionStore.DefaultPath);
+        var settings = new SettingsService(KairoConfig.UserConfigDirectory, new CredentialStore());
+        var ctx = ProtocolJsonContext.Default;
+        var host = new AgentHost(
+            _store,
+            settings,
+            notify: ev => _rpc.NotifyAsync(Notifications.AgentEvent, ev, ctx.AgentEventDto),
+            sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty));
+        HostMethods.Register(_rpc, host, settings, _store, PickFolderAsync, hostName: "desktop");
+
+        Closed += (_, _) => _store.Dispose();
+
+        _ = InitializeWebViewAsync();
+    }
+
+    /// <summary>Native folder picker, always on the UI thread. The only way a new folder becomes a workspace.</summary>
+    private Task<string?> PickFolderAsync()
+    {
+        var result = new TaskCompletionSource<string?>();
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+                picker.FileTypeFilter.Add("*");
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+                var folder = await picker.PickSingleFolderAsync();
+                result.SetResult(folder?.Path);
+            }
+            catch (Exception ex)
+            {
+                result.SetException(ex);
+            }
+        });
+        return result.Task;
+    }
+
+    private async Task InitializeWebViewAsync()
+    {
+        await Web.EnsureCoreWebView2Async();
+        var core = Web.CoreWebView2;
+
+        var settings = core.Settings;
+        settings.IsWebMessageEnabled = true;
+        settings.AreHostObjectsAllowed = false; // the bridge is JSON messages only, never host objects
+        settings.IsStatusBarEnabled = false;
+        settings.IsZoomControlEnabled = false;
+        settings.IsGeneralAutofillEnabled = false;
+        settings.IsPasswordAutosaveEnabled = false;
+#if !DEBUG
+        settings.AreDevToolsEnabled = false;
+        settings.AreDefaultContextMenusEnabled = false;
+        settings.AreBrowserAcceleratorKeysEnabled = false;
+#endif
+
+        // KAIRO_UI_DEV_URL=http://localhost:5173 loads the Vite dev server with hot reload.
+        Uri start;
+        if (Environment.GetEnvironmentVariable("KAIRO_UI_DEV_URL") is { Length: > 0 } devUrl)
+        {
+            start = new Uri(devUrl);
+        }
+        else
+        {
+            core.SetVirtualHostNameToFolderMapping(
+                AppHost, Path.Combine(AppContext.BaseDirectory, "ui"), CoreWebView2HostResourceAccessKind.DenyCors);
+            start = new Uri($"https://{AppHost}/index.html");
+        }
+        _origin = start.GetLeftPart(UriPartial.Authority);
+
+        core.NavigationStarting += (sender, e) =>
+        {
+            if (IsAppOrigin(e.Uri))
+                return;
+            e.Cancel = true;
+            _ = OpenExternallyAsync(e.Uri);
+        };
+        core.NewWindowRequested += (sender, e) =>
+        {
+            e.Handled = true;
+            _ = OpenExternallyAsync(e.Uri);
+        };
+        core.WebMessageReceived += OnWebMessageReceived;
+
+        core.Navigate(start.ToString());
+    }
+
+    private async void OnWebMessageReceived(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        if (!IsAppOrigin(e.Source))
+            return;
+
+        string json;
+        try
+        {
+            json = e.WebMessageAsJson;
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        await _rpc.HandleAsync(json);
+    }
+
+    private bool IsAppOrigin(string uri) =>
+        Uri.TryCreate(uri, UriKind.Absolute, out var u) &&
+        string.Equals(u.GetLeftPart(UriPartial.Authority), _origin, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Links leave the app only through a native confirmation, and only as http(s).</summary>
+    private async Task OpenExternallyAsync(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var target) || (target.Scheme != Uri.UriSchemeHttps && target.Scheme != Uri.UriSchemeHttp))
+            return;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Открыть ссылку в браузере?",
+            Content = target.ToString(),
+            PrimaryButtonText = "Открыть",
+            CloseButtonText = "Отмена",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            await Launcher.LaunchUriAsync(target);
+    }
+}

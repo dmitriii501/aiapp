@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>kairo</AssemblyName>
+    <RootNamespace>Kairo.Cli</RootNamespace>
+    <!-- Native AOT is the goal, but the Anthropic SDK is not trim/AOT safe yet (ADR-0001). -->
+    <PublishAot>false</PublishAot>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kairo.Host\Kairo.Host.csproj" />
+    <ProjectReference Include="..\Kairo.Windows\Kairo.Windows.csproj" />
+  </ItemGroup>
+
+</Project>
