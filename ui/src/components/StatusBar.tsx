@@ -1,4 +1,4 @@
-import { Cpu, Folder, Plug } from "lucide-react";
+import { Cpu, Folder, Plug, SquareTerminal } from "lucide-react";
 import { useStore } from "../store";
 import { folderName } from "../format";
 
@@ -10,6 +10,8 @@ export function StatusBar() {
   const chat = useStore((s) => (s.currentId ? s.chats[s.currentId] : undefined));
   const mcp = useStore((s) => s.mcp);
   const setMcpOpen = useStore((s) => s.setMcpOpen);
+  const terminalOpen = useStore((s) => s.terminalOpen);
+  const toggleTerminal = useStore((s) => s.toggleTerminal);
 
   const enabled = mcp?.servers.filter((s) => s.status !== "disabled") ?? [];
   const ready = enabled.filter((s) => s.status === "ready").length;
@@ -30,6 +32,10 @@ export function StatusBar() {
         </span>
       </div>
       <div className="statusbar__group">
+        <button className="statusbar__item statusbar__button" title="Терминал (Ctrl+`)" aria-pressed={terminalOpen} onClick={toggleTerminal}>
+          <SquareTerminal size={13} />
+          Терминал
+        </button>
         <button
           className={`statusbar__item statusbar__button${failed ? " statusbar__button--warn" : ""}`}
           title={failed ? "Часть серверов MCP не подключилась" : "Серверы MCP"}

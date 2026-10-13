@@ -14,6 +14,7 @@ import type {
   Workspace,
 } from "./bridge/protocol";
 import { Methods, Notifications } from "./bridge/protocol";
+import * as terminal from "./terminal/registry";
 
 export type Item =
   | { id: string; kind: "user"; text: string }
@@ -34,6 +35,17 @@ export interface Chat {
   usage?: { input: number; output: number };
 }
 
+let spawning = false;
+
+function loadTerminalHeight(): number {
+  try {
+    const saved = Number(localStorage.getItem("kairo.terminalHeight"));
+    return saved >= 120 ? saved : 260;
+  } catch {
+    return 260;
+  }
+}
+
 export const MODES: Mode[] = ["default", "acceptEdits", "plan"];
 
 interface State {
@@ -46,6 +58,10 @@ interface State {
   settingsOpen: boolean;
   mcp?: McpListResult;
   mcpOpen: boolean;
+  terminalOpen: boolean;
+  terminals: { id: string; title: string; exited: boolean }[];
+  activeTerminalId?: string;
+  terminalHeight: number;
   toast?: string;
 
   boot(): Promise<void>;
@@ -61,6 +77,11 @@ interface State {
   saveSettings(update: SettingsUpdate, key?: { provider: ProviderId; key: string }): Promise<boolean>;
   setSettingsOpen(open: boolean): void;
   setMcpOpen(open: boolean): void;
+  toggleTerminal(): void;
+  newTerminal(): Promise<void>;
+  selectTerminal(id: string): void;
+  closeTerminal(id: string): Promise<void>;
+  setTerminalHeight(height: number): void;
   mcpAdd(name: string, target: { command?: string; url?: string }): Promise<boolean>;
   mcpRemove(name: string): Promise<void>;
   mcpSetEnabled(name: string, enabled: boolean): Promise<void>;
@@ -149,11 +170,19 @@ export const useStore = create<State>((set, get) => {
     chats: {},
     settingsOpen: false,
     mcpOpen: false,
+    terminalOpen: false,
+    terminals: [],
+    terminalHeight: loadTerminalHeight(),
 
     async boot() {
       bridge.on(Notifications.AgentEvent, onEvent);
       bridge.on(Notifications.SessionsChanged, () => void refreshSessions().catch(fail));
       bridge.on(Notifications.McpChanged, (mcp) => set({ mcp }));
+      bridge.on(Notifications.TerminalOutput, (o) => terminal.write(o.terminalId, o.data));
+      bridge.on(Notifications.TerminalExited, (e) => {
+        terminal.exited(e.terminalId, e.exitCode);
+        set((s) => ({ terminals: s.terminals.map((t) => (t.id === e.terminalId ? { ...t, exited: true } : t)) }));
+      });
       try {
         const settings = await bridge.call(Methods.SettingsGet, {});
         set({ settings });
@@ -268,6 +297,59 @@ export const useStore = create<State>((set, get) => {
 
     setSettingsOpen: (open) => set({ settingsOpen: open }),
     setMcpOpen: (open) => set({ mcpOpen: open }),
+
+    toggleTerminal() {
+      const { terminalOpen, currentId, sessions } = get();
+      if (!terminalOpen && !sessions.some((x) => x.id === currentId) && get().terminals.length === 0) {
+        set({ toast: "Откройте сессию: терминал запускается в её папке." });
+        return;
+      }
+      set({ terminalOpen: !terminalOpen });
+    },
+
+    async newTerminal() {
+      if (spawning) return;
+      const session = get().sessions.find((x) => x.id === get().currentId);
+      const cwd = session?.workingDirectory ?? get().workspaces[0]?.path;
+      if (!cwd) {
+        set({ toast: "Откройте сессию: терминал запускается в её папке." });
+        return;
+      }
+      spawning = true;
+      try {
+        const { id, title } = await terminal.spawn(cwd);
+        set((s) => ({ terminals: [...s.terminals, { id, title, exited: false }], activeTerminalId: id }));
+      } catch (e) {
+        fail(e);
+        if (get().terminals.length === 0) set({ terminalOpen: false });
+      } finally {
+        spawning = false;
+      }
+    },
+
+    selectTerminal(id) {
+      terminal.show(id);
+      set({ activeTerminalId: id });
+    },
+
+    async closeTerminal(id) {
+      await bridge.call(Methods.TerminalClose, { terminalId: id }).catch(() => {});
+      terminal.dispose(id);
+      const rest = get().terminals.filter((t) => t.id !== id);
+      const next = get().activeTerminalId === id ? rest[rest.length - 1]?.id : get().activeTerminalId;
+      set({ terminals: rest, activeTerminalId: next, terminalOpen: rest.length > 0 && get().terminalOpen });
+      terminal.show(next);
+    },
+
+    setTerminalHeight(height) {
+      const clamped = Math.max(120, Math.min(height, Math.round(window.innerHeight * 0.7)));
+      set({ terminalHeight: clamped });
+      try {
+        localStorage.setItem("kairo.terminalHeight", String(clamped));
+      } catch {
+        // Storage can be unavailable; the height just is not remembered.
+      }
+    },
 
     async mcpAdd(name, target) {
       try {

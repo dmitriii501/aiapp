@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useStore, type Chat } from "../store";
+import { fromTerminal } from "../keys";
 import { folderName } from "../format";
 import { Transcript } from "./Transcript";
 import { PermissionPrompt } from "./PermissionPrompt";
@@ -39,7 +40,7 @@ function Body({ chat, folder }: { chat: Chat; folder: string }) {
   // Shift+Tab cycles the permission mode; Esc interrupts (the permission prompt handles its own Esc).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (settingsOpen) return;
+      if (settingsOpen || fromTerminal(e)) return;
       if (e.key === "Tab" && e.shiftKey) {
         e.preventDefault();
         void cycleMode();

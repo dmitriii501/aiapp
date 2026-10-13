@@ -15,6 +15,7 @@ public static class HostMethods
         SettingsService settings,
         SessionStore store,
         McpService mcp,
+        TerminalService terminals,
         Func<Task<string?>> pickFolder,
         string hostName)
     {
@@ -58,6 +59,23 @@ public static class HostMethods
         rpc.Register(Methods.SessionSetMode, ctx.SessionModeParams, ctx.Ok, (p, _) =>
         {
             host.SetMode(p.SessionId, p.Mode);
+            return Task.FromResult(new Ok());
+        });
+
+        rpc.Register(Methods.TerminalOpen, ctx.TerminalOpenParams, ctx.TerminalInfo, (p, _) => Task.FromResult(terminals.Open(p.WorkingDirectory, p.Columns, p.Rows)));
+        rpc.Register(Methods.TerminalInput, ctx.TerminalInputParams, ctx.Ok, (p, _) =>
+        {
+            terminals.Input(p.TerminalId, p.Data);
+            return Task.FromResult(new Ok());
+        });
+        rpc.Register(Methods.TerminalResize, ctx.TerminalResizeParams, ctx.Ok, (p, _) =>
+        {
+            terminals.Resize(p.TerminalId, p.Columns, p.Rows);
+            return Task.FromResult(new Ok());
+        });
+        rpc.Register(Methods.TerminalClose, ctx.TerminalRef, ctx.Ok, (p, _) =>
+        {
+            terminals.Close(p.TerminalId);
             return Task.FromResult(new Ok());
         });
 

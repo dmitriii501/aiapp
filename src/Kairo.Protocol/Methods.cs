@@ -28,6 +28,15 @@ public static class Methods
 
     public const string PermissionRespond = "permission.respond";
 
+    /// <summary>
+    /// Terminals are the one place where the UI's input reaches a shell. It is the user typing, not the agent: the host picks
+    /// the shell and the folder (a known workspace), the UI only sends keystrokes. Agent tool calls never go through here.
+    /// </summary>
+    public const string TerminalOpen = "terminal.open";
+    public const string TerminalInput = "terminal.input";
+    public const string TerminalResize = "terminal.resize";
+    public const string TerminalClose = "terminal.close";
+
     public const string McpList = "mcp.list";
     /// <summary>Adds a server to mcp.json. The UI sends what the user typed; the host validates it.</summary>
     public const string McpAdd = "mcp.add";
@@ -46,6 +55,12 @@ public static class Notifications
 
     /// <summary>The session list changed (created, renamed, started or finished running).</summary>
     public const string SessionsChanged = "sessions.changed";
+
+    /// <summary><see cref="TerminalOutput"/>: text the shell printed (VT sequences included).</summary>
+    public const string TerminalOutputEvent = "terminal.output";
+
+    /// <summary><see cref="TerminalExited"/>: the shell process ended.</summary>
+    public const string TerminalExitedEvent = "terminal.exited";
 
     /// <summary><see cref="McpListResult"/> after a server connected, failed or was edited.</summary>
     public const string McpChanged = "mcp.changed";
@@ -174,3 +189,19 @@ public sealed record McpAddParams(string Name, string? Command = null, string? U
 public sealed record McpNameParams(string Name);
 
 public sealed record McpEnabledParams(string Name, bool Enabled);
+
+// ---- Terminal ----
+
+public sealed record TerminalOpenParams(string WorkingDirectory, int Columns, int Rows);
+
+public sealed record TerminalInfo(string TerminalId, string Title);
+
+public sealed record TerminalInputParams(string TerminalId, string Data);
+
+public sealed record TerminalResizeParams(string TerminalId, int Columns, int Rows);
+
+public sealed record TerminalRef(string TerminalId);
+
+public sealed record TerminalOutput(string TerminalId, string Data);
+
+public sealed record TerminalExited(string TerminalId, int ExitCode);

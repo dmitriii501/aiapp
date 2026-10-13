@@ -20,12 +20,18 @@ export const Methods = {
   McpSetEnabled: "mcp.setEnabled",
   McpReload: "mcp.reload",
   McpImportDesktop: "mcp.importDesktop",
+  TerminalOpen: "terminal.open",
+  TerminalInput: "terminal.input",
+  TerminalResize: "terminal.resize",
+  TerminalClose: "terminal.close",
 } as const;
 
 export const Notifications = {
   AgentEvent: "agent.event",
   SessionsChanged: "sessions.changed",
   McpChanged: "mcp.changed",
+  TerminalOutput: "terminal.output",
+  TerminalExited: "terminal.exited",
 } as const;
 
 export type Mode = "default" | "acceptEdits" | "plan";
@@ -140,6 +146,11 @@ export interface AgentEvent {
   diff?: string;
 }
 
+export interface TerminalInfo {
+  terminalId: string;
+  title: string;
+}
+
 export type McpStatus = "connecting" | "ready" | "failed" | "disabled";
 
 export interface McpServerInfo {
@@ -179,10 +190,16 @@ export interface MethodMap {
   [Methods.McpSetEnabled]: { params: { name: string; enabled: boolean }; result: McpListResult };
   [Methods.McpReload]: { params: NoParams; result: McpListResult };
   [Methods.McpImportDesktop]: { params: NoParams; result: McpListResult };
+  [Methods.TerminalOpen]: { params: { workingDirectory: string; columns: number; rows: number }; result: TerminalInfo };
+  [Methods.TerminalInput]: { params: { terminalId: string; data: string }; result: Ok };
+  [Methods.TerminalResize]: { params: { terminalId: string; columns: number; rows: number }; result: Ok };
+  [Methods.TerminalClose]: { params: { terminalId: string }; result: Ok };
 }
 
 export interface NotificationMap {
   [Notifications.AgentEvent]: AgentEvent;
   [Notifications.SessionsChanged]: NoParams;
   [Notifications.McpChanged]: McpListResult;
+  [Notifications.TerminalOutput]: { terminalId: string; data: string };
+  [Notifications.TerminalExited]: { terminalId: string; exitCode: number };
 }

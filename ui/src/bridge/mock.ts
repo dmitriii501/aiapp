@@ -19,6 +19,10 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
   const workspaces: Workspace[] = [{ path: "C:\\Users\\dev\\projects\\kairo", name: "kairo" }];
   const sessions = new Map<string, { summary: SessionSummary; items: TranscriptItem[]; mode: Mode }>();
   const waiting = new Map<string, (decision: string) => void>();
+  // A fake shell: echoes what is typed, so the terminal UI can be developed without the host.
+  const shells = new Map<string, string>();
+  const PROMPT = "PS C:\\Users\\dev\\projects\\kairo> ";
+  const shellOut = (terminalId: string, data: string) => notify(Notifications.TerminalOutput, { terminalId, data });
   const mcpServers: McpServerInfo[] = [
     { name: "filesystem", transport: "stdio", status: "ready", tools: ["read_file", "write_file", "list_directory", "search_files"] },
     { name: "github", transport: "http", status: "ready", tools: ["create_issue", "list_pull_requests", "get_file_contents"] },
@@ -140,6 +144,34 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       case Methods.PermissionRespond:
         waiting.get(p.requestId)?.(p.decision);
         waiting.delete(p.requestId);
+        return { success: true };
+      case Methods.TerminalOpen: {
+        const terminalId = "term" + Math.random().toString(16).slice(2, 10);
+        shells.set(terminalId, "");
+        setTimeout(() => shellOut(terminalId, "\x1b[2mPowerShell (макет: команды не выполняются в браузере)\x1b[0m\r\n\r\n" + PROMPT), 40);
+        return { terminalId, title: `PowerShell · ${p.workingDirectory.split("\\").pop()}` };
+      }
+      case Methods.TerminalInput: {
+        let line = shells.get(p.terminalId) ?? "";
+        for (const ch of p.data) {
+          if (ch === "\r") {
+            shellOut(p.terminalId, "\r\n" + (line.trim() ? `\x1b[31mмакет: «${line.trim()}» не выполнена\x1b[0m\r\n` : "") + PROMPT);
+            line = "";
+          } else if (ch === "\x7f") {
+            if (line) shellOut(p.terminalId, "\b \b");
+            line = line.slice(0, -1);
+          } else {
+            shellOut(p.terminalId, ch);
+            line += ch;
+          }
+        }
+        shells.set(p.terminalId, line);
+        return { success: true };
+      }
+      case Methods.TerminalResize:
+        return { success: true };
+      case Methods.TerminalClose:
+        shells.delete(p.terminalId);
         return { success: true };
       case Methods.McpList:
       case Methods.McpReload:

@@ -10,6 +10,13 @@ import "./styles.css";
 if (bridge.kind === "mock" && location.hash === "#mcp") {
   setTimeout(() => useStore.getState().setMcpOpen(true), 300);
 }
+if (bridge.kind === "mock" && location.hash === "#terminal") {
+  setTimeout(async () => {
+    const store = useStore.getState();
+    await store.startSession(store.workspaces[0].path);
+    useStore.getState().toggleTerminal();
+  }, 300);
+}
 if (bridge.kind === "mock" && location.hash === "#settings") {
   setTimeout(() => useStore.getState().setSettingsOpen(true), 300);
 }

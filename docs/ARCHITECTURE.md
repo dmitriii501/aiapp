@@ -126,6 +126,12 @@ public interface ITool
 - **Модели решений (System 1).** Отдельный тип провайдера — `IDecisionModel`: выбор из вариантов, оценка по шкале, вероятность «да» вместо генерации текста. Первый адаптер — Jev (NuGet `TypeSafe.Jev`), запасной — эмуляция на любой быстрой LLM. Используется в управлении ПК, позже — в маршрутизации и рое. См. [ADR-0002](adr/0002-pc-control-system1-system2.md).
 - **Лимиты:** `System.Threading.RateLimiting` — ограничение параллельных запросов и RPM/TPM на провайдера и ключ. Критично для роя.
 
+## Терминал
+
+`IPty` / `IPtyFactory` в `Kairo.Core`, реализация на ConPTY в `Kairo.Windows` (`LibraryImport`, без рефлексии). `TerminalService` в `Kairo.Host` собирает вывод в пакеты по ~8 мс и отправляет по порядку; в интерфейсе xterm.js (`ui/src/terminal/registry.ts`) живёт вне React и сохраняет прокрутку при скрытии панели. Правила безопасности — в [SECURITY-MODEL](SECURITY-MODEL.md#терминал).
+
+Нюансы ConPTY, на которые уже наступили: у дочернего процесса нужно обнулить стандартные дескрипторы (`STARTF_USESTDHANDLES`), иначе он пишет в консоль родителя; перед `ClosePseudoConsole` нужно дать выводу догнать, иначе последние строки быстро завершившихся команд теряются.
+
 ## Kairo.Mcp
 
 Официальный C# SDK (`ModelContextProtocol.Core`, без DI и хостинга). Транспорты stdio и Streamable HTTP; OAuth для удалённых серверов — позже.

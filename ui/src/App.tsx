@@ -6,6 +6,7 @@ import { ChatView } from "./components/ChatView";
 import { Welcome } from "./components/Welcome";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { McpDialog } from "./components/McpDialog";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 
@@ -14,6 +15,8 @@ export function App() {
   const currentId = useStore((s) => s.currentId);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const mcpOpen = useStore((s) => s.mcpOpen);
+  const terminalOpen = useStore((s) => s.terminalOpen);
+  const toggleTerminal = useStore((s) => s.toggleTerminal);
   const boot = useStore((s) => s.boot);
   const closeSession = useStore((s) => s.closeSession);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
@@ -21,6 +24,18 @@ export function App() {
   useEffect(() => {
     void boot();
   }, [boot]);
+
+  // Ctrl+` shows and hides the terminal panel (inside the terminal, xterm hands the key to us).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "`") {
+        e.preventDefault();
+        toggleTerminal();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleTerminal]);
 
   return (
     <div className="workbench">
@@ -34,7 +49,10 @@ export function App() {
         </button>
       </nav>
       <Sidebar />
-      <main className="editor">{booted && (currentId ? <ChatView key={currentId} sessionId={currentId} /> : <Welcome />)}</main>
+      <main className="editor">
+        <div className="editor__main">{booted && (currentId ? <ChatView key={currentId} sessionId={currentId} /> : <Welcome />)}</div>
+        {terminalOpen && <TerminalPanel />}
+      </main>
       <StatusBar />
       {settingsOpen && <SettingsDialog />}
       {mcpOpen && <McpDialog />}

@@ -9,7 +9,7 @@ Open-source AI super-app for Windows: coding agent (Claude Code / Codex / Cursor
 - `Kairo.Tools` — Read, Write, Edit, Glob, Grep, Shell.
 - `Kairo.Mcp` — MCP client (official SDK, `ModelContextProtocol.Core`): `McpConfigStore` (`%APPDATA%\Kairo\mcp.json`, Claude Desktop format), `McpManager` (connections, `mcp__server__tool` tools, always `exec` risk). Project-level `.mcp.json` is deliberately not read.
 - `Kairo.Host` — runs sessions for a UI: background turns, `AgentEventDto` streaming, pending permissions, settings (`config.toml` + secret store), `ProviderFactory` (shared with the CLI). `HostMethods` is the complete list of methods the UI can call.
-- `Kairo.Windows` — Credential Manager (`CredentialStore`). Keys: `Kairo/<provider>`; env vars override.
+- `Kairo.Windows` — Credential Manager (`CredentialStore`; keys `Kairo/<provider>`, env vars override) and ConPTY (`ConPtyFactory`, shells in a kill-on-close job object). `TerminalService` in `Kairo.Host` is the only protocol path where UI input reaches a shell: user typing only, host-chosen program and folder (docs/SECURITY-MODEL.md → Терминал).
 - `Kairo.Cli` — `kairo` (interactive, `-p`, `-c`, `-r`, `sessions`).
 - `Kairo.Protocol` + `Kairo.Desktop` + `ui/` — desktop shell, JSON-RPC bridge, React UI (`ui/src/store.ts` holds state and handles agent events; `ui/src/bridge/mock.ts` stands in for the core in a plain browser).
 - Tests use `ScriptedProvider` (scripted model) and `FakeHttpHandler` (canned SSE) — no network.

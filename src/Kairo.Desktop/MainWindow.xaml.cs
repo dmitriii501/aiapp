@@ -48,14 +48,23 @@ public sealed partial class MainWindow : Window
             notify: ev => _rpc.NotifyAsync(Notifications.AgentEvent, ev, ctx.AgentEventDto),
             sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty),
             mcp: mcpManager);
-        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), PickFolderAsync, hostName: "desktop");
+        var shell = ShellLocator.Find();
+        var terminals = new TerminalService(
+            new ConPtyFactory(),
+            _store,
+            shell.CommandLine,
+            shell.Title,
+            output => _rpc.NotifyAsync(Notifications.TerminalOutputEvent, output, ctx.TerminalOutput),
+            exited => _rpc.NotifyAsync(Notifications.TerminalExitedEvent, exited, ctx.TerminalExited));
+        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), terminals, PickFolderAsync, hostName: "desktop");
 
         // Servers connect in the background; the window does not wait for them.
         _ = mcpManager.ReloadAsync();
 
         Closed += (_, _) =>
         {
-            // Stops stdio servers so they do not outlive the window.
+            // Stops the user's shells and the stdio servers so they do not outlive the window.
+            terminals.Dispose();
             mcpManager.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
             _store.Dispose();
         };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
+import { fromTerminal } from "../keys";
 import type { Decision, PermissionPrompt as Prompt } from "../bridge/protocol";
 import { DiffView, diffStats } from "./DiffView";
 
@@ -34,7 +35,7 @@ export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (useStore.getState().settingsOpen) return;
+      if (useStore.getState().settingsOpen || fromTerminal(e)) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         setSelected((s) => (s + (e.key === "ArrowDown" ? 1 : OPTIONS.length - 1)) % OPTIONS.length);
