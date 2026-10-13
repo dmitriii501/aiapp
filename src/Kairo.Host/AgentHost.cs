@@ -50,6 +50,9 @@ public sealed class AgentHost(
 
     // ---- Sessions ----
 
+    /// <summary>True while any session has a turn in progress (including one waiting for a permission).</summary>
+    public bool AnyRunning() => _live.Values.Any(l => l.Turn is not null);
+
     public IReadOnlyList<SessionSummary> List() => store.List(100).Select(Summary).ToList();
 
     public SessionSummary Create(string workingDirectory)

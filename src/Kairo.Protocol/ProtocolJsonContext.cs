@@ -35,6 +35,7 @@ namespace Kairo.Protocol;
 [JsonSerializable(typeof(TerminalRef))]
 [JsonSerializable(typeof(TerminalOutput))]
 [JsonSerializable(typeof(TerminalExited))]
+[JsonSerializable(typeof(UpdateStatus))]
 [JsonSerializable(typeof(McpListResult))]
 [JsonSerializable(typeof(McpAddParams))]
 [JsonSerializable(typeof(McpNameParams))]

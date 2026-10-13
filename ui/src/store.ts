@@ -8,6 +8,7 @@ import type {
   ProviderId,
   SessionSummary,
   McpListResult,
+  UpdateStatus,
   Settings,
   SettingsUpdate,
   ToolStatus,
@@ -58,6 +59,8 @@ interface State {
   settingsOpen: boolean;
   mcp?: McpListResult;
   mcpOpen: boolean;
+  update?: UpdateStatus;
+  updateOpen: boolean;
   terminalOpen: boolean;
   terminals: { id: string; title: string; exited: boolean }[];
   activeTerminalId?: string;
@@ -77,6 +80,9 @@ interface State {
   saveSettings(update: SettingsUpdate, key?: { provider: ProviderId; key: string }): Promise<boolean>;
   setSettingsOpen(open: boolean): void;
   setMcpOpen(open: boolean): void;
+  setUpdateOpen(open: boolean): void;
+  checkUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
   toggleTerminal(): void;
   newTerminal(): Promise<void>;
   selectTerminal(id: string): void;
@@ -170,6 +176,7 @@ export const useStore = create<State>((set, get) => {
     chats: {},
     settingsOpen: false,
     mcpOpen: false,
+    updateOpen: false,
     terminalOpen: false,
     terminals: [],
     terminalHeight: loadTerminalHeight(),
@@ -178,6 +185,7 @@ export const useStore = create<State>((set, get) => {
       bridge.on(Notifications.AgentEvent, onEvent);
       bridge.on(Notifications.SessionsChanged, () => void refreshSessions().catch(fail));
       bridge.on(Notifications.McpChanged, (mcp) => set({ mcp }));
+      bridge.on(Notifications.UpdateChanged, (update) => set({ update }));
       bridge.on(Notifications.TerminalOutput, (o) => terminal.write(o.terminalId, o.data));
       bridge.on(Notifications.TerminalExited, (e) => {
         terminal.exited(e.terminalId, e.exitCode);
@@ -187,6 +195,7 @@ export const useStore = create<State>((set, get) => {
         const settings = await bridge.call(Methods.SettingsGet, {});
         set({ settings });
         void bridge.call(Methods.McpList, {}).then((mcp) => set({ mcp })).catch(fail);
+        void bridge.call(Methods.UpdateGet, {}).then((update) => set({ update })).catch(fail);
         await Promise.all([refreshSessions(), refreshWorkspaces()]);
       } catch (e) {
         fail(e);
@@ -297,6 +306,16 @@ export const useStore = create<State>((set, get) => {
 
     setSettingsOpen: (open) => set({ settingsOpen: open }),
     setMcpOpen: (open) => set({ mcpOpen: open }),
+
+    setUpdateOpen: (open) => set({ updateOpen: open }),
+
+    async checkUpdate() {
+      await bridge.call(Methods.UpdateCheck, {}).then((update) => set({ update })).catch(fail);
+    },
+
+    async installUpdate() {
+      await bridge.call(Methods.UpdateInstall, {}).catch(fail);
+    },
 
     toggleTerminal() {
       const { terminalOpen, currentId, sessions } = get();

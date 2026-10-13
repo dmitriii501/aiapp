@@ -10,6 +10,9 @@ import "./styles.css";
 if (bridge.kind === "mock" && location.hash === "#mcp") {
   setTimeout(() => useStore.getState().setMcpOpen(true), 300);
 }
+if (bridge.kind === "mock" && location.hash === "#update") {
+  setTimeout(() => useStore.getState().setUpdateOpen(true), 300);
+}
 if (bridge.kind === "mock" && location.hash === "#terminal") {
   setTimeout(async () => {
     const store = useStore.getState();

@@ -1,5 +1,5 @@
 import type { RpcMessage } from "./bridge";
-import type { AgentEvent, McpListResult, McpServerInfo, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, Workspace } from "./protocol";
+import type { AgentEvent, McpListResult, McpServerInfo, Mode, PermissionPrompt, SessionSummary, Settings, TranscriptItem, UpdateStatus, Workspace } from "./protocol";
 import { Methods, Notifications } from "./protocol";
 
 // In-memory stand-in for the core, so the UI can be developed with `npm run dev` in a browser.
@@ -19,6 +19,21 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
   const workspaces: Workspace[] = [{ path: "C:\\Users\\dev\\projects\\kairo", name: "kairo" }];
   const sessions = new Map<string, { summary: SessionSummary; items: TranscriptItem[]; mode: Mode }>();
   const waiting = new Map<string, (decision: string) => void>();
+  let updateStatus: UpdateStatus = {
+    state: "available",
+    currentVersion: "0.1.0",
+    version: "0.2.0",
+    notes: "- Встроенный терминал\n- Серверы MCP\n- Показ изменений файлов перед подтверждением",
+  };
+  async function runUpdate() {
+    for (let progress = 0; progress <= 100; progress += 10) {
+      updateStatus = { ...updateStatus, state: "downloading", progress };
+      notify(Notifications.UpdateChanged, updateStatus);
+      await sleep(250);
+    }
+    updateStatus = { state: "idle", currentVersion: "0.2.0" };
+    notify(Notifications.UpdateChanged, updateStatus);
+  }
   // A fake shell: echoes what is typed, so the terminal UI can be developed without the host.
   const shells = new Map<string, string>();
   const PROMPT = "PS C:\\Users\\dev\\projects\\kairo> ";
@@ -144,6 +159,12 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
       case Methods.PermissionRespond:
         waiting.get(p.requestId)?.(p.decision);
         waiting.delete(p.requestId);
+        return { success: true };
+      case Methods.UpdateGet:
+      case Methods.UpdateCheck:
+        return updateStatus;
+      case Methods.UpdateInstall:
+        void runUpdate();
         return { success: true };
       case Methods.TerminalOpen: {
         const terminalId = "term" + Math.random().toString(16).slice(2, 10);

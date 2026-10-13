@@ -8,7 +8,7 @@
 - [x] `Kairo.Protocol` + мост JSON-RPC (TS-типы пока вручную)
 - [ ] Генерация TS-типов из C#
 - [x] CI на GitHub Actions: сборка и тесты (линтеры — позже)
-- [ ] Выбор установщика: Velopack или MSIX
+- [x] Выбор установщика: Velopack ([ADR-0005](adr/0005-velopack-installer-and-updates.md))
 - [x] Spike: WebView2 с прозрачным фоном поверх Mica
 - [x] Spike: CLI со стримингом ответа модели (Anthropic, OpenAI-compatible)
 - [ ] Spike: Native AOT для CLI — заблокирован SDK Anthropic, см. ADR-0001
@@ -40,7 +40,7 @@
 - [x] Встроенный терминал (ConPTY + xterm.js)
 - [x] MCP-клиент (stdio + HTTP), импорт конфига Claude Desktop; OAuth и проектные `.mcp.json` — позже
 - [x] Светлая тема: проверена на скриншотах
-- [ ] Установщик, автообновление
+- [x] Установщик и автообновление (Velopack, GitHub Releases); осталась подпись пакетов
 - [ ] **Публичная alpha**
 
 ## M3 — Паритет с Claude Code / Codex

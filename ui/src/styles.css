@@ -521,6 +521,10 @@ select.input {
   background: var(--list-hover);
 }
 
+.statusbar__button--accent {
+  color: var(--accent);
+}
+
 .statusbar__button--warn {
   color: var(--warn);
 }
@@ -1281,6 +1285,46 @@ select.input {
 .field__hint {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* ---------- Update ---------- */
+
+.update__versions {
+  margin: 12px 0 8px;
+  color: var(--text-strong);
+}
+
+.update__notes {
+  max-height: 220px;
+  margin: 8px 0;
+  padding: 4px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  user-select: text;
+}
+
+.update__warning {
+  margin: 8px 0;
+  color: var(--muted);
+}
+
+.update__error {
+  margin: 8px 0;
+  color: var(--error);
+  user-select: text;
+}
+
+.progress {
+  height: 4px;
+  margin: 12px 0 6px;
+  background: var(--border);
+}
+
+.progress__bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
 }
 
 /* ---------- Terminal ---------- */

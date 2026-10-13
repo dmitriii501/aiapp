@@ -25,6 +25,9 @@ namespace Kairo.Core.Config;
 ///
 /// [anthropic]
 /// base_url = "https://my-gateway.example.com"   # optional, for Anthropic-format gateways
+///
+/// [update]
+/// check = false                                  # no automatic update checks
 /// </example>
 public sealed class KairoConfig
 {
@@ -36,6 +39,12 @@ public sealed class KairoConfig
 
     /// <summary>Optional endpoint for Anthropic-format gateways and proxies (<c>[anthropic] base_url</c>).</summary>
     public string? AnthropicBaseUrl { get; set; }
+
+    /// <summary>Check for updates on start and every few hours (<c>[update] check</c>, default true).</summary>
+    public bool? UpdateCheck { get; set; }
+
+    /// <summary>Overrides the update feed (<c>[update] url</c>): a GitHub repository, a web address or a folder. Read from the user's file only.</summary>
+    public string? UpdateUrl { get; set; }
     public PermissionMode? Mode { get; set; }
     public List<string> Allow { get; } = [];
     public List<string> Ask { get; } = [];
@@ -53,7 +62,12 @@ public sealed class KairoConfig
         if (userConfigDirectory is not null)
             config.Merge(Path.Combine(userConfigDirectory, "config.toml"));
         if (includeProject)
+        {
+            // Updates replace the app itself: a repository must not be able to steer them.
+            var (check, url) = (config.UpdateCheck, config.UpdateUrl);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
+            (config.UpdateCheck, config.UpdateUrl) = (check, url);
+        }
         return config;
     }
 
@@ -134,6 +148,13 @@ public sealed class KairoConfig
 
         if (table.TryGetValue("anthropic", out var a) && a is TomlTable anthropic)
             AnthropicBaseUrl = String(anthropic, "base_url") ?? AnthropicBaseUrl;
+
+        if (table.TryGetValue("update", out var u) && u is TomlTable update)
+        {
+            if (update.TryGetValue("check", out var check) && check is bool enabled)
+                UpdateCheck = enabled;
+            UpdateUrl = String(update, "url") ?? UpdateUrl;
+        }
 
         Sources.Add(source);
     }

@@ -16,6 +16,7 @@ public static class HostMethods
         SessionStore store,
         McpService mcp,
         TerminalService terminals,
+        UpdateService updates,
         Func<Task<string?>> pickFolder,
         string hostName)
     {
@@ -59,6 +60,14 @@ public static class HostMethods
         rpc.Register(Methods.SessionSetMode, ctx.SessionModeParams, ctx.Ok, (p, _) =>
         {
             host.SetMode(p.SessionId, p.Mode);
+            return Task.FromResult(new Ok());
+        });
+
+        rpc.Register(Methods.UpdateGet, ctx.Empty, ctx.UpdateStatus, (_, _) => Task.FromResult(updates.Status));
+        rpc.Register(Methods.UpdateCheck, ctx.Empty, ctx.UpdateStatus, async (_, _) => await updates.CheckAsync().ConfigureAwait(false));
+        rpc.Register(Methods.UpdateInstall, ctx.Empty, ctx.Ok, (_, _) =>
+        {
+            updates.Install();
             return Task.FromResult(new Ok());
         });
 

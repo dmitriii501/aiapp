@@ -37,6 +37,12 @@ public static class Methods
     public const string TerminalResize = "terminal.resize";
     public const string TerminalClose = "terminal.close";
 
+    /// <summary>Current update state. The UI can ask to check and to install, never to choose where an update comes from.</summary>
+    public const string UpdateGet = "update.get";
+    public const string UpdateCheck = "update.check";
+    /// <summary>Downloads the offered update and restarts into it. Refused while an agent is working.</summary>
+    public const string UpdateInstall = "update.install";
+
     public const string McpList = "mcp.list";
     /// <summary>Adds a server to mcp.json. The UI sends what the user typed; the host validates it.</summary>
     public const string McpAdd = "mcp.add";
@@ -55,6 +61,9 @@ public static class Notifications
 
     /// <summary>The session list changed (created, renamed, started or finished running).</summary>
     public const string SessionsChanged = "sessions.changed";
+
+    /// <summary><see cref="UpdateStatus"/> whenever the update state changes.</summary>
+    public const string UpdateChanged = "update.changed";
 
     /// <summary><see cref="TerminalOutput"/>: text the shell printed (VT sequences included).</summary>
     public const string TerminalOutputEvent = "terminal.output";
@@ -205,3 +214,11 @@ public sealed record TerminalRef(string TerminalId);
 public sealed record TerminalOutput(string TerminalId, string Data);
 
 public sealed record TerminalExited(string TerminalId, int ExitCode);
+
+// ---- Updates ----
+
+/// <summary>
+/// State: disabled (not an installed build, or no update feed) | idle | checking | available | downloading | error.
+/// Version and Notes describe the offered update; Progress is 0-100 while downloading.
+/// </summary>
+public sealed record UpdateStatus(string State, string CurrentVersion, string? Version = null, string? Notes = null, int? Progress = null, string? Error = null);

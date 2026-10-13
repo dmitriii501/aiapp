@@ -7,6 +7,7 @@ import { Welcome } from "./components/Welcome";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { McpDialog } from "./components/McpDialog";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 
@@ -15,6 +16,7 @@ export function App() {
   const currentId = useStore((s) => s.currentId);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const mcpOpen = useStore((s) => s.mcpOpen);
+  const updateOpen = useStore((s) => s.updateOpen);
   const terminalOpen = useStore((s) => s.terminalOpen);
   const toggleTerminal = useStore((s) => s.toggleTerminal);
   const boot = useStore((s) => s.boot);
@@ -56,6 +58,7 @@ export function App() {
       <StatusBar />
       {settingsOpen && <SettingsDialog />}
       {mcpOpen && <McpDialog />}
+      {updateOpen && <UpdateDialog />}
       <Toast />
     </div>
   );

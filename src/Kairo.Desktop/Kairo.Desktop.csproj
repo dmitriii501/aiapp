@@ -17,11 +17,23 @@
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <UiDir>$(MSBuildThisFileDirectory)..\..\ui\</UiDir>
+    <!-- Own Main (Program.cs): Velopack must run before the XAML app starts. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <!-- Release builds pass -p:KairoUpdateUrl=https://github.com/OWNER/REPO; local builds have no feed. -->
+    <KairoUpdateUrl Condition="'$(KairoUpdateUrl)' == ''"></KairoUpdateUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>KairoUpdateUrl</_Parameter1>
+      <_Parameter2>$(KairoUpdateUrl)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>

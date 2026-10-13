@@ -56,17 +56,36 @@ public sealed partial class MainWindow : Window
             shell.Title,
             output => _rpc.NotifyAsync(Notifications.TerminalOutputEvent, output, ctx.TerminalOutput),
             exited => _rpc.NotifyAsync(Notifications.TerminalExitedEvent, exited, ctx.TerminalExited));
-        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), terminals, PickFolderAsync, hostName: "desktop");
 
-        // Servers connect in the background; the window does not wait for them.
-        _ = mcpManager.ReloadAsync();
-
-        Closed += (_, _) =>
+        // Stops the user's shells and the stdio servers so they do not outlive the window or an update restart.
+        Task ShutDown()
         {
-            // Stops the user's shells and the stdio servers so they do not outlive the window.
             terminals.Dispose();
             mcpManager.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
             _store.Dispose();
+            return Task.CompletedTask;
+        }
+
+        // The update feed comes from the environment, the user's own config, or the release build; never from a project.
+        var userConfig = settings.LoadUser();
+        var feed = Environment.GetEnvironmentVariable("KAIRO_UPDATE_URL") ?? userConfig.UpdateUrl ?? VelopackUpdater.BakedInFeed;
+        var updates = new UpdateService(
+            new VelopackUpdater(feed),
+            autoCheck: userConfig.UpdateCheck ?? true,
+            isBusy: host.AnyRunning,
+            beforeRestart: ShutDown,
+            notify: status => _rpc.NotifyAsync(Notifications.UpdateChanged, status, ctx.UpdateStatus));
+
+        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), terminals, updates, PickFolderAsync, hostName: "desktop");
+
+        // Servers connect and updates are checked in the background; the window does not wait for them.
+        _ = mcpManager.ReloadAsync();
+        updates.StartAutoCheck();
+
+        Closed += (_, _) =>
+        {
+            updates.Dispose();
+            _ = ShutDown();
         };
 
         _ = InitializeWebViewAsync();

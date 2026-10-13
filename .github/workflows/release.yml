@@ -1,0 +1,71 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish a release: the installer, a portable zip and the update packages
+# that installed copies of Kairo pick up. See docs/RELEASING.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      VPK_VERSION: 1.2.161 # keep in step with the Velopack package in src/Kairo.Desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Version from the tag
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: dotnet test Kairo.slnx -c Release -p:KairoSkipUi=true
+
+      - name: Publish (self-contained, with the UI and the update feed baked in)
+        run: >
+          dotnet publish src/Kairo.Desktop -c Release -r win-x64 -p:Platform=x64 --self-contained
+          -p:Version=${{ env.VERSION }}
+          -p:KairoUpdateUrl=https://github.com/${{ github.repository }}
+          -o publish
+
+      - name: Install the Velopack CLI
+        run: dotnet tool install -g vpk --version ${{ env.VPK_VERSION }}
+
+      # Previous releases let Velopack build small delta packages. The first release has none.
+      - name: Download previous releases
+        continue-on-error: true
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release notes from commit subjects
+        shell: bash
+        run: |
+          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          range=${previous:+$previous..}${GITHUB_REF_NAME}
+          git log --no-merges --pretty='format:- %s' "$range" > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Pack
+        run: >
+          vpk pack --packId Kairo --packVersion ${{ env.VERSION }} --packDir publish --mainExe Kairo.exe
+          --packTitle Kairo --packAuthors "The Kairo Authors" --releaseNotes RELEASE_NOTES.md --outputDir Releases
+
+      # Unsigned until a certificate is set up: add --signParams (or Azure Trusted Signing) to the pack step.
+      - name: Upload to the GitHub release
+        run: >
+          vpk upload github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+          --publish --releaseName "Kairo ${{ env.VERSION }}" --tag ${{ github.ref_name }} --outputDir Releases

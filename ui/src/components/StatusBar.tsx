@@ -1,4 +1,4 @@
-import { Cpu, Folder, Plug, SquareTerminal } from "lucide-react";
+import { ArrowUpCircle, Cpu, Folder, Plug, SquareTerminal } from "lucide-react";
 import { useStore } from "../store";
 import { folderName } from "../format";
 
@@ -10,6 +10,8 @@ export function StatusBar() {
   const chat = useStore((s) => (s.currentId ? s.chats[s.currentId] : undefined));
   const mcp = useStore((s) => s.mcp);
   const setMcpOpen = useStore((s) => s.setMcpOpen);
+  const update = useStore((s) => s.update);
+  const setUpdateOpen = useStore((s) => s.setUpdateOpen);
   const terminalOpen = useStore((s) => s.terminalOpen);
   const toggleTerminal = useStore((s) => s.toggleTerminal);
 
@@ -44,6 +46,24 @@ export function StatusBar() {
           <Plug size={13} />
           {enabled.length === 0 ? "MCP" : `MCP: ${ready}/${enabled.length}`}
         </button>
+        {update && (
+          <button
+            className={`statusbar__item statusbar__button${update.state === "available" || update.state === "downloading" ? " statusbar__button--accent" : ""}`}
+            title="Обновления"
+            onClick={() => setUpdateOpen(true)}
+          >
+            {update.state === "available" ? (
+              <>
+                <ArrowUpCircle size={13} />
+                Обновление {update.version}
+              </>
+            ) : update.state === "downloading" ? (
+              <>Загрузка {update.progress ?? 0}%</>
+            ) : (
+              <>v{update.currentVersion}</>
+            )}
+          </button>
+        )}
         {chat?.usage && (
           <span className="statusbar__item" title="Токены последнего ответа: вход / выход">
             ↑{k(chat.usage.input)} ↓{k(chat.usage.output)}

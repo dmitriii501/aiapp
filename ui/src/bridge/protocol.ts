@@ -20,6 +20,9 @@ export const Methods = {
   McpSetEnabled: "mcp.setEnabled",
   McpReload: "mcp.reload",
   McpImportDesktop: "mcp.importDesktop",
+  UpdateGet: "update.get",
+  UpdateCheck: "update.check",
+  UpdateInstall: "update.install",
   TerminalOpen: "terminal.open",
   TerminalInput: "terminal.input",
   TerminalResize: "terminal.resize",
@@ -30,6 +33,7 @@ export const Notifications = {
   AgentEvent: "agent.event",
   SessionsChanged: "sessions.changed",
   McpChanged: "mcp.changed",
+  UpdateChanged: "update.changed",
   TerminalOutput: "terminal.output",
   TerminalExited: "terminal.exited",
 } as const;
@@ -146,6 +150,20 @@ export interface AgentEvent {
   diff?: string;
 }
 
+export type UpdateState = "disabled" | "idle" | "checking" | "available" | "downloading" | "error";
+
+export interface UpdateStatus {
+  state: UpdateState;
+  currentVersion: string;
+  /** The offered version. */
+  version?: string;
+  /** Release notes (markdown). */
+  notes?: string;
+  /** 0-100 while downloading. */
+  progress?: number;
+  error?: string;
+}
+
 export interface TerminalInfo {
   terminalId: string;
   title: string;
@@ -190,6 +208,9 @@ export interface MethodMap {
   [Methods.McpSetEnabled]: { params: { name: string; enabled: boolean }; result: McpListResult };
   [Methods.McpReload]: { params: NoParams; result: McpListResult };
   [Methods.McpImportDesktop]: { params: NoParams; result: McpListResult };
+  [Methods.UpdateGet]: { params: NoParams; result: UpdateStatus };
+  [Methods.UpdateCheck]: { params: NoParams; result: UpdateStatus };
+  [Methods.UpdateInstall]: { params: NoParams; result: Ok };
   [Methods.TerminalOpen]: { params: { workingDirectory: string; columns: number; rows: number }; result: TerminalInfo };
   [Methods.TerminalInput]: { params: { terminalId: string; data: string }; result: Ok };
   [Methods.TerminalResize]: { params: { terminalId: string; columns: number; rows: number }; result: Ok };
@@ -200,6 +221,7 @@ export interface NotificationMap {
   [Notifications.AgentEvent]: AgentEvent;
   [Notifications.SessionsChanged]: NoParams;
   [Notifications.McpChanged]: McpListResult;
+  [Notifications.UpdateChanged]: UpdateStatus;
   [Notifications.TerminalOutput]: { terminalId: string; data: string };
   [Notifications.TerminalExited]: { terminalId: string; exitCode: number };
 }
