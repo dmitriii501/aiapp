@@ -38,7 +38,8 @@ public interface IPermissionPrompt
 
 /// <param name="ContextWindow">Size of the model's context in tokens; 0 turns automatic compaction off.</param>
 /// <param name="CompactAt">Share of the window at which the history is summarized.</param>
-public sealed record AgentOptions(string Model, string? Effort = null, int MaxModelCalls = 60, int ContextWindow = 0, double CompactAt = 0.8);
+/// <param name="Subagent">This agent was started by the Task tool: it does not offer subagents of its own.</param>
+public sealed record AgentOptions(string Model, string? Effort = null, int MaxModelCalls = 60, int ContextWindow = 0, double CompactAt = 0.8, bool Subagent = false);
 
 public sealed class ToolRegistry
 {
@@ -51,6 +52,8 @@ public sealed class ToolRegistry
     }
 
     public IReadOnlyList<ToolSpec> Specs => _tools.Values.Select(t => t.Spec).ToList();
+
+    public IReadOnlyCollection<ITool> All => _tools.Values;
 
     public bool TryGet(string name, out ITool tool) => _tools.TryGetValue(name, out tool!);
 }
@@ -86,6 +89,9 @@ public sealed class Agent(
     /// <param name="note">Context from Kairo (not from the user), sent with the prompt and hidden in the transcript.</param>
     public async IAsyncEnumerable<AgentEvent> RunAsync(string userText, string? note = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
+        if (!options.Subagent)
+            toolContext.Subagents = new SubagentRunner(provider, tools, permissions, prompt, toolContext, systemPrompt, options);
+
         var compactions = 0;
         if (ShouldCompact(compactions))
         {

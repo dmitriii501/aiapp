@@ -29,3 +29,6 @@ desktop.ini
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Local release builds (see docs/RELEASING.md)
+artifacts/

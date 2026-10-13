@@ -47,6 +47,13 @@ public interface IFileHistory
     IDisposable Track(string path);
 }
 
+/// <summary>Lets the Task tool start a subagent. Set by the agent loop for each run; null where subagents are not available.</summary>
+public interface ISubagents
+{
+    /// <summary>Runs <paramref name="task"/> in a fresh agent of the given type and returns its final report.</summary>
+    Task<ToolResult> RunAsync(string type, string task, CancellationToken ct);
+}
+
 /// <summary>Per-session state shared by tools.</summary>
 public sealed class ToolContext(string workingDirectory)
 {
@@ -54,6 +61,9 @@ public sealed class ToolContext(string workingDirectory)
 
     /// <summary>Set by the host for each turn; null when nobody keeps checkpoints (the CLI).</summary>
     public IFileHistory? History { get; set; }
+
+    /// <summary>Set by the agent loop; the Task tool uses it to start subagents.</summary>
+    public ISubagents? Subagents { get; set; }
 
     /// <summary>Files read in this session. Write/Edit refuse to overwrite a file the agent has not seen.</summary>
     public HashSet<string> ReadFiles { get; } = new(StringComparer.OrdinalIgnoreCase);

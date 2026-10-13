@@ -9,7 +9,7 @@ public static class BuiltinTools
     /// <param name="webHandler">Replaces the HTTP stack of both web tools (tests).</param>
     public static IReadOnlyList<ITool> All(Func<WebSearchSettings>? web = null, HttpMessageHandler? webHandler = null) =>
     [
-        new ReadTool(), new WriteTool(), new EditTool(), new GlobTool(), new GrepTool(), new ShellTool(), new TodoWriteTool(), new ExitPlanModeTool(),
+        new ReadTool(), new WriteTool(), new EditTool(), new GlobTool(), new GrepTool(), new ShellTool(), new TodoWriteTool(), new ExitPlanModeTool(), new TaskTool(),
         new WebFetchTool(webHandler), new WebSearchTool(web ?? (() => new WebSearchSettings()), webHandler),
     ];
 }
