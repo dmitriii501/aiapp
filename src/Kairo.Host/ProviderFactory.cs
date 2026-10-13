@@ -75,7 +75,7 @@ public static class ProviderFactory
 
         return id switch
         {
-            Anthropic => new AnthropicProvider(ApiKey(id, secrets)!, baseUrl: config.AnthropicBaseUrl),
+            Anthropic => new AnthropicProvider(ApiKey(id, secrets)!, baseUrl: config.AnthropicBaseUrl, promptCache: config.AnthropicPromptCache ?? true),
             _ => new OpenAICompatibleProvider(Http, new Uri(config.BaseUrl!.TrimEnd('/') + "/"), ApiKey(id, secrets)),
         };
     }

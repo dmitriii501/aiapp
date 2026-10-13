@@ -139,7 +139,7 @@ internal static class SwarmCommand
     private static void PrintStatus(SwarmStore store, SwarmInfo info)
     {
         Console.WriteLine($"\nSwarm {info.Id} [{info.Status}] — {info.Goal}");
-        Console.WriteLine($"  {info.TokensUsed:N0} tokens over {info.ModelCalls} model calls (limit {info.Limits.MaxTokens:N0})");
+        Console.WriteLine($"  {info.TokensUsed:N0} tokens over {info.ModelCalls} model calls (limit {info.Limits.MaxTokens:N0}); {info.CachedTokens:N0} of them read from the prompt cache");
         foreach (var a in store.Agents(info.Id))
             Console.WriteLine($"  {a.Name,-10} {a.Status,-8} {(a.Branch is null ? a.WorkingDirectory : a.Branch)}");
         Console.WriteLine("Board:");

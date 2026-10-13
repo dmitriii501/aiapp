@@ -23,10 +23,18 @@ public sealed class AnthropicProvider : IModelProvider
     /// </summary>
     private readonly bool _officialApi;
 
+    /// <summary>
+    /// Gateways get two plain block-level cache breakpoints (last tool, last message block) instead of the top-level field. Gateways
+    /// that forward the Anthropic format keep the prefix cache this way; ones that do not support it ignore the marker.
+    /// </summary>
+    private readonly bool _gatewayCache;
+
     /// <param name="baseUrl">An Anthropic-format endpoint other than api.anthropic.com, e.g. a gateway. A trailing /v1 is accepted.</param>
-    public AnthropicProvider(string apiKey, HttpClient? httpClient = null, string? baseUrl = null)
+    /// <param name="promptCache">False stops block-level cache markers for a gateway that rejects them.</param>
+    public AnthropicProvider(string apiKey, HttpClient? httpClient = null, string? baseUrl = null, bool promptCache = true)
     {
         _officialApi = string.IsNullOrWhiteSpace(baseUrl);
+        _gatewayCache = !_officialApi && promptCache;
         var url = _officialApi ? null : NormalizeBaseUrl(baseUrl!);
         _client = (httpClient, url) switch
         {
@@ -54,7 +62,7 @@ public sealed class AnthropicProvider : IModelProvider
         {
             Model = request.Model,
             MaxTokens = request.MaxTokens,
-            Messages = request.Messages.Select(ToParam).ToList(),
+            Messages = request.Messages.Select((m, i) => ToParam(m, cache: _gatewayCache && i == request.Messages.Count - 1)).ToList(),
         };
         if (_officialApi)
         {
@@ -70,7 +78,12 @@ public sealed class AnthropicProvider : IModelProvider
         if (request.System is { } system)
             parameters = parameters with { System = system };
         if (request.Tools is { Count: > 0 } tools)
-            parameters = parameters with { Tools = tools.Select(t => ToTool(t, _officialApi)).ToList() };
+        {
+            parameters = parameters with
+            {
+                Tools = tools.Select((t, i) => ToTool(t, _officialApi, cache: _gatewayCache && i == tools.Count - 1)).ToList(),
+            };
+        }
         if (request.Effort is { } effort)
             parameters = parameters with { OutputConfig = new BetaOutputConfig { Effort = ParseEffort(effort) } };
 
@@ -164,15 +177,18 @@ public sealed class AnthropicProvider : IModelProvider
         };
     }
 
-    private static BetaMessageParam ToParam(ChatMessage message)
+    /// <param name="cache">Marks the message's last block as a cache breakpoint (the end of the reusable prefix).</param>
+    private static BetaMessageParam ToParam(ChatMessage message, bool cache = false)
     {
         var content = new List<BetaContentBlockParam>();
-        foreach (var part in message.Parts)
+        for (var i = 0; i < message.Parts.Count; i++)
         {
+            var part = message.Parts[i];
+            var mark = cache && i == message.Parts.Count - 1 ? new BetaCacheControlEphemeral() : null;
             switch (part)
             {
                 case TextPart t:
-                    content.Add(new BetaTextBlockParam { Text = t.Text });
+                    content.Add(mark is null ? new BetaTextBlockParam { Text = t.Text } : new BetaTextBlockParam { Text = t.Text, CacheControl = mark });
                     break;
                 case ThinkingPart t:
                     content.Add(new BetaThinkingBlockParam { Thinking = t.Thinking, Signature = t.Signature });
@@ -181,10 +197,12 @@ public sealed class AnthropicProvider : IModelProvider
                     content.Add(new BetaRedactedThinkingBlockParam { Data = r.Data });
                     break;
                 case ToolCallPart c:
-                    content.Add(new BetaToolUseBlockParam { ID = c.Id, Name = c.Name, Input = ToDictionary(c.Input) });
+                    var use = new BetaToolUseBlockParam { ID = c.Id, Name = c.Name, Input = ToDictionary(c.Input) };
+                    content.Add(mark is null ? use : use with { CacheControl = mark });
                     break;
                 case ToolResultPart r:
-                    content.Add(new BetaToolResultBlockParam { ToolUseID = r.ToolCallId, Content = r.Content, IsError = r.IsError });
+                    var result = new BetaToolResultBlockParam { ToolUseID = r.ToolCallId, Content = r.Content, IsError = r.IsError };
+                    content.Add(mark is null ? result : result with { CacheControl = mark });
                     break;
             }
         }
@@ -196,7 +214,7 @@ public sealed class AnthropicProvider : IModelProvider
         };
     }
 
-    private static BetaToolUnion ToTool(ToolSpec spec, bool eagerInputStreaming)
+    private static BetaToolUnion ToTool(ToolSpec spec, bool eagerInputStreaming, bool cache)
     {
         var schema = spec.InputSchema;
         var properties = new Dictionary<string, JsonElement>();
@@ -215,6 +233,8 @@ public sealed class AnthropicProvider : IModelProvider
             Description = spec.Description,
             InputSchema = new() { Properties = properties, Required = required },
         };
+        if (cache)
+            tool = tool with { CacheControl = new BetaCacheControlEphemeral() };
         // Stream large inputs (file contents) as they are generated; Kairo validates them itself.
         return eagerInputStreaming ? tool with { EagerInputStreaming = true } : tool;
     }

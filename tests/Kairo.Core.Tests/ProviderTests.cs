@@ -87,6 +87,24 @@ public class ProviderTests
         Assert.False(body.TryGetProperty("cache_control", out _));
         Assert.False(body.GetProperty("tools")[0].TryGetProperty("eager_input_streaming", out _));
         Assert.False(handler.Request.Headers.TryGetValues("anthropic-beta", out var betas) && betas.Any(b => b.Contains("fallback")));
+
+        // The prefix cache is kept with two block-level breakpoints: the last tool and the last block of the last message.
+        Assert.Equal("ephemeral", body.GetProperty("tools")[0].GetProperty("cache_control").GetProperty("type").GetString());
+        var messages = body.GetProperty("messages");
+        var lastContent = messages[messages.GetArrayLength() - 1].GetProperty("content");
+        Assert.Equal("ephemeral", lastContent[lastContent.GetArrayLength() - 1].GetProperty("cache_control").GetProperty("type").GetString());
+        for (var i = 0; i < messages.GetArrayLength() - 1; i++)
+            Assert.DoesNotContain("cache_control", messages[i].GetRawText());
+    }
+
+    [Fact]
+    public async Task Anthropic_gateway_cache_markers_can_be_turned_off()
+    {
+        var handler = new FakeHttpHandler(AnthropicTextStream);
+
+        await Collect(new AnthropicProvider("k", new HttpClient(handler), baseUrl: "https://gateway.example.com", promptCache: false), Request());
+
+        Assert.DoesNotContain("cache_control", handler.RequestBody!);
     }
 
     [Theory]

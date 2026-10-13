@@ -32,7 +32,7 @@ public sealed record SwarmLimits(int MaxAgents = 5, long MaxTokens = 3_000_000, 
 
 public sealed record SwarmInfo(
     string Id, string WorkingDirectory, string Goal, string Status, string? Summary,
-    SwarmLimits Limits, long TokensUsed, int ModelCalls, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    SwarmLimits Limits, long TokensUsed, int ModelCalls, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, long CachedTokens = 0);
 
 public sealed record SwarmAgent(string SwarmId, string Name, string Role, string Status, string SessionId, string WorkingDirectory, string? Branch);
 
@@ -80,6 +80,10 @@ public sealed class SwarmStore : IDisposable
                 id INTEGER PRIMARY KEY AUTOINCREMENT, swarm_id TEXT NOT NULL REFERENCES swarms(id) ON DELETE CASCADE,
                 author TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL);
             """);
+
+        // Databases from earlier builds lack the cache counter.
+        if (!Query(r => r.GetString(1), "SELECT * FROM pragma_table_info('swarms') WHERE name = 'cached_tokens'").Any())
+            Execute("ALTER TABLE swarms ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0");
     }
 
     public static string DefaultPath =>
@@ -112,8 +116,10 @@ public sealed class SwarmStore : IDisposable
         Execute("UPDATE swarms SET max_agents = $a, max_tokens = $t, max_concurrency = $c, max_minutes = $m WHERE id = $id",
             ("$id", id), ("$a", limits.MaxAgents), ("$t", limits.MaxTokens), ("$c", limits.MaxConcurrency), ("$m", limits.MaxMinutes));
 
-    public void AddUsage(string id, long tokens, int calls) =>
-        Execute("UPDATE swarms SET tokens_used = tokens_used + $t, model_calls = model_calls + $c WHERE id = $id", ("$id", id), ("$t", tokens), ("$c", calls));
+    /// <param name="cached">The part of <paramref name="tokens"/> that was read from the provider's prompt cache.</param>
+    public void AddUsage(string id, long tokens, int calls, long cached = 0) =>
+        Execute("UPDATE swarms SET tokens_used = tokens_used + $t, model_calls = model_calls + $c, cached_tokens = cached_tokens + $k WHERE id = $id",
+            ("$id", id), ("$t", tokens), ("$c", calls), ("$k", cached));
 
     // ---- Agents ----
 
@@ -248,7 +254,8 @@ public sealed class SwarmStore : IDisposable
         new SwarmLimits(r.GetInt32(r.GetOrdinal("max_agents")), r.GetInt64(r.GetOrdinal("max_tokens")), r.GetInt32(r.GetOrdinal("max_concurrency")), r.GetInt32(r.GetOrdinal("max_minutes"))),
         r.GetInt64(r.GetOrdinal("tokens_used")), r.GetInt32(r.GetOrdinal("model_calls")),
         DateTimeOffset.Parse(r.GetString(r.GetOrdinal("created_at")), CultureInfo.InvariantCulture),
-        DateTimeOffset.Parse(r.GetString(r.GetOrdinal("updated_at")), CultureInfo.InvariantCulture));
+        DateTimeOffset.Parse(r.GetString(r.GetOrdinal("updated_at")), CultureInfo.InvariantCulture),
+        r.GetInt64(r.GetOrdinal("cached_tokens")));
 
     private static SwarmMessage ReadMessage(SqliteDataReader r) => new(
         r.GetInt64(r.GetOrdinal("id")), r.GetString(r.GetOrdinal("swarm_id")), r.GetString(r.GetOrdinal("from_agent")), r.GetString(r.GetOrdinal("to_agent")),

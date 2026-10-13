@@ -26,6 +26,7 @@ namespace Kairo.Core.Config;
 ///
 /// [anthropic]
 /// base_url = "https://my-gateway.example.com"   # optional, for Anthropic-format gateways
+/// prompt_cache = false                           # stop cache markers a gateway rejects (default true)
 ///
 /// [context]
 /// window = 200000                                # tokens; 0 turns automatic compaction off
@@ -54,6 +55,9 @@ public sealed class KairoConfig
 
     /// <summary>Optional endpoint for Anthropic-format gateways and proxies (<c>[anthropic] base_url</c>).</summary>
     public string? AnthropicBaseUrl { get; set; }
+
+    /// <summary>Send prompt-cache markers to an Anthropic-format gateway (<c>[anthropic] prompt_cache</c>, default true).</summary>
+    public bool? AnthropicPromptCache { get; set; }
 
     /// <summary>Check for updates on start and every few hours (<c>[update] check</c>, default true).</summary>
     public bool? UpdateCheck { get; set; }
@@ -194,7 +198,11 @@ public sealed class KairoConfig
             BaseUrl = String(openai, "base_url") ?? BaseUrl;
 
         if (table.TryGetValue("anthropic", out var a) && a is TomlTable anthropic)
+        {
             AnthropicBaseUrl = String(anthropic, "base_url") ?? AnthropicBaseUrl;
+            if (anthropic.TryGetValue("prompt_cache", out var cache) && cache is bool useCache)
+                AnthropicPromptCache = useCache;
+        }
 
         if (table.TryGetValue("context", out var c) && c is TomlTable context)
         {

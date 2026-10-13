@@ -36,7 +36,7 @@ internal sealed class SwarmModel(Func<string, ModelRequest, ModelResponse> respo
     public static ModelResponse Say(string text) => ScriptedProvider.Say(text);
 
     public static ModelResponse Calls(params (string Id, string Tool, string Json)[] calls) =>
-        new(new ChatMessage(ChatRole.Assistant, calls.Select(c => (MessagePart)new ToolCallPart(c.Id, c.Tool, InvalidToolInput.ParseOrWrap(c.Json))).ToList()), "tool_use", new Usage(10, 5));
+        new(new ChatMessage(ChatRole.Assistant, calls.Select(c => (MessagePart)new ToolCallPart(c.Id, c.Tool, InvalidToolInput.ParseOrWrap(c.Json))).ToList()), "tool_use", new Usage(10, 5, 4));
 
     /// <summary>The messages of the agent's current turn: everything after the last prompt.</summary>
     public static List<ChatMessage> CurrentTurn(ModelRequest request)
@@ -200,6 +200,8 @@ public class SwarmTests : IDisposable
         Assert.Contains("kairo: merge coder-1", log);
         Assert.True(outcome.TokensUsed > 0);
         Assert.True(outcome.ModelCalls >= 6);
+        var stored = _store.Get(swarm.Id)!;
+        Assert.True(stored.CachedTokens > 0 && stored.CachedTokens % 4 == 0);
     }
 
     [Fact]
