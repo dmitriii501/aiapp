@@ -132,7 +132,7 @@ public sealed class ShellTool : ITool
         var text = outcome.Output.TrimEnd();
         // Git for Windows opens the NUL device when it starts, and a Windows AppContainer may not; say so instead of leaving the model guessing.
         if (outcome.ExitCode != 0 && text.Contains("/dev/null", StringComparison.Ordinal) && text.Contains("Permission denied", StringComparison.Ordinal))
-            text += "\n(git cannot start inside the sandbox: Windows denies it the NUL device. Do not retry; use Read, Grep and Glob to look at the code, or ask the user to run the git command.)";
+            text += "\n(git cannot start inside the sandbox: Windows denies it the NUL device. Do not retry. To look at the repository use the Git tool if you have it (read-only status, diff, log, show), else Read, Grep and Glob; for anything that changes git, ask the user.)";
         var body = text.Length == 0 ? "(no output)" : text;
         return outcome.ExitCode == 0
             ? new ToolResult(TextFiles.Truncate(body))

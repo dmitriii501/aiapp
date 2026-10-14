@@ -48,7 +48,7 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             Ready: ProviderFactory.Check(config, Secrets) is null,
             BraveKey: !string.IsNullOrEmpty(ProviderFactory.BraveKey(Secrets)),
             JevKey: !string.IsNullOrEmpty(ProviderFactory.JevKey(Secrets)),
-            SandboxShell: config.SandboxShell ?? "off",
+            SandboxShell: config.SandboxShell ?? "workers",
             SandboxNetwork: config.SandboxNetwork ?? false,
             SandboxRead: config.SandboxRead.ToList(),
             PcEnabled: config.PcEnabled ?? false,
@@ -87,7 +87,7 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             if (mode is { } md)
                 KairoConfig.SetOrRemove(KairoConfig.Section(table, "permissions"), "mode", ModeName(md));
             if (update.SandboxShell is { } shell)
-                KairoConfig.SetOrRemove(KairoConfig.Section(table, "sandbox"), "shell", shell == "off" ? null : shell);
+                KairoConfig.SetOrRemove(KairoConfig.Section(table, "sandbox"), "shell", shell == "workers" ? null : shell); // unset means workers; "off" is written, because it is not the default
             if (update.PcEnabled is { } pcEnabled)
             {
                 var pc = KairoConfig.Section(table, "pc");

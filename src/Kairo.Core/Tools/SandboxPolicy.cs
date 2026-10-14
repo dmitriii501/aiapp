@@ -20,11 +20,16 @@ public sealed class SandboxPolicy(KairoConfig config, ISandboxProvider? provider
 {
     public const int DefaultMemoryMb = 4096;
 
+    /// <summary>
+    /// Swarm workers run in the sandbox unless the user turned it off: they act without anyone watching, on text they read from the
+    /// repository, so the fence is the default for them. Sessions the user is working in are fenced only when they ask.
+    /// </summary>
     public bool Applies(PermissionMode mode, bool swarmWorker) => config.SandboxShell switch
     {
+        "off" => false,
         "always" => true,
         "autonomous" => swarmWorker || mode == PermissionMode.Bypass,
-        _ => false,
+        _ => swarmWorker, // "workers", and unset
     };
 
     /// <summary>The sandbox for a session (<paramref name="swarmWorker"/> false) or a worker, or null when the settings do not ask for one.</summary>
@@ -56,5 +61,5 @@ public sealed class UnavailableSandbox(string reason) : IProcessSandbox
     public IReadOnlyList<string> WritablePaths => [];
 
     public Task<ProcessOutcome> RunAsync(ProcessLaunch launch, CancellationToken ct) =>
-        throw new InvalidOperationException($"the sandbox is required by [sandbox] shell in config.toml, but {reason}");
+        throw new InvalidOperationException($"these commands must run in the sandbox ([sandbox] shell in config.toml; \"off\" turns it off, swarm workers use it unless it is off), but {reason}");
 }

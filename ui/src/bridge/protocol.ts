@@ -113,7 +113,7 @@ export interface PcApp {
   title: string;
 }
 
-export type SandboxShell = "off" | "autonomous" | "always";
+export type SandboxShell = "off" | "workers" | "autonomous" | "always";
 
 export interface SettingsUpdate {
   provider?: ProviderId;

@@ -73,14 +73,58 @@ public static class GitWorkspace
         return code == 0 ? null : $"Could not create the worktree: {output}";
     }
 
-    /// <summary>Commits everything in a worktree. Returns false when there was nothing to commit.</summary>
-    public static async Task<bool> CommitAllAsync(string worktree, string message, CancellationToken ct = default)
+    /// <summary>
+    /// Switches that keep a repository from running things on git's behalf. Git runs <c>core.fsmonitor</c> and similar settings as commands,
+    /// and a worker's worktree holds files the worker (which may be sandboxed) wrote: none of those may decide what runs outside the sandbox.
+    /// </summary>
+    private static readonly string[] NoCommands = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.pager=cat", "-c", "diff.external=", "--no-optional-locks"];
+
+    /// <summary>
+    /// The git directory git made for <paramref name="worktree"/>, found from the main repository: <c>.git/worktrees/&lt;name&gt;</c>, whose
+    /// <c>gitdir</c> file names the worktree. The worktree's own <c>.git</c> file is not used: it sits in a folder the worker writes, and
+    /// pointing it at a folder of the worker's own (with a config of its own) would make every git command here run what that config says.
+    /// </summary>
+    public static async Task<string?> TrustedGitDirAsync(string repository, string worktree, CancellationToken ct = default)
     {
-        await RunAsync(worktree, ["add", "-A"], ct).ConfigureAwait(false);
-        var (clean, _) = await RunAsync(worktree, ["diff", "--cached", "--quiet"], ct).ConfigureAwait(false);
+        var (code, common) = await RunAsync(repository, ["rev-parse", "--git-common-dir"], ct).ConfigureAwait(false);
+        if (code != 0)
+            return null;
+        var commonDir = Path.GetFullPath(Path.IsPathRooted(common.Trim()) ? common.Trim() : Path.Combine(repository, common.Trim()));
+        var admin = Path.Combine(commonDir, "worktrees");
+        if (!Directory.Exists(admin))
+            return null;
+
+        var wanted = Normalize(Path.Combine(worktree, ".git"));
+        foreach (var dir in Directory.EnumerateDirectories(admin))
+        {
+            var pointer = Path.Combine(dir, "gitdir");
+            if (File.Exists(pointer) && Normalize(File.ReadAllText(pointer).Trim()) == wanted)
+                return dir;
+        }
+        return null;
+    }
+
+    private static string Normalize(string path) => Path.GetFullPath(path.Replace('/', '\\')).TrimEnd('\\').ToLowerInvariant();
+
+    /// <summary>
+    /// Runs git on a worktree by its trusted git directory and with the switches above. Throws when the directory cannot be verified:
+    /// better a commit that does not happen than a command that runs from the worker's config.
+    /// </summary>
+    public static async Task<(int Code, string Output)> RunInWorktreeAsync(string repository, string worktree, IEnumerable<string> args, CancellationToken ct = default)
+    {
+        var gitDir = await TrustedGitDirAsync(repository, worktree, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"the git directory of the worktree {worktree} could not be verified from the main repository");
+        return await RunAsync(worktree, [$"--git-dir={gitDir}", $"--work-tree={worktree}", .. NoCommands, .. args], ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Commits everything in a worktree. Returns false when there was nothing to commit.</summary>
+    public static async Task<bool> CommitAllAsync(string repository, string worktree, string message, CancellationToken ct = default)
+    {
+        await RunInWorktreeAsync(repository, worktree, ["add", "-A"], ct).ConfigureAwait(false);
+        var (clean, _) = await RunInWorktreeAsync(repository, worktree, ["diff", "--cached", "--quiet"], ct).ConfigureAwait(false);
         if (clean == 0)
             return false;
-        var (code, _) = await RunAsync(worktree, [.. Identity, "commit", "-m", message], ct).ConfigureAwait(false);
+        var (code, _) = await RunInWorktreeAsync(repository, worktree, [.. Identity, "commit", "-m", message], ct).ConfigureAwait(false);
         return code == 0;
     }
 

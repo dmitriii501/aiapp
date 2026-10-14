@@ -337,7 +337,7 @@ public class SwarmTests : IDisposable
         var coder2 = _store.Agents(swarm.Id).Single(a => a.Name == "coder-2");
         // Work that was never merged must survive the cleaning.
         File.WriteAllText(Path.Combine(coder2.WorkingDirectory, "extra.txt"), "unmerged\n");
-        await GitWorkspace.CommitAllAsync(coder2.WorkingDirectory, "unmerged work");
+        await GitWorkspace.CommitAllAsync(_repo, coder2.WorkingDirectory, "unmerged work");
 
         var report = await SwarmCleaner.CleanAsync(_store, swarm.Id);
 
@@ -376,6 +376,44 @@ public class SwarmTests : IDisposable
     }
 
     [Fact]
+    public async Task A_worktree_whose_git_file_was_pointed_at_a_hostile_folder_still_commits_through_the_real_git_directory_and_runs_nothing()
+    {
+        await InitRepoAsync();
+        var worktree = Path.Combine(_dir.Path, "wt-evil");
+        await GitWorkspace.AddWorktreeAsync(_repo, worktree, "kairo/x/evil");
+        // What a sandboxed worker can do: it writes in its worktree, the .git file included. Plain git would read the config below and
+        // run the fsmonitor command outside the sandbox.
+        var evil = Path.Combine(worktree, "evil");
+        Directory.CreateDirectory(Path.Combine(evil, "objects"));
+        Directory.CreateDirectory(Path.Combine(evil, "refs"));
+        File.WriteAllText(Path.Combine(evil, "HEAD"), "ref: refs/heads/evil\n");
+        var marker = Path.Combine(_dir.Path, "PWNED.txt");
+        File.WriteAllText(Path.Combine(evil, "config"), $"[core]\n\trepositoryformatversion = 0\n\tfsmonitor = echo pwned > \"{marker.Replace('\\', '/')}\"\n");
+        File.SetAttributes(Path.Combine(worktree, ".git"), FileAttributes.Normal); // attrib -r, as a worker may
+        File.WriteAllText(Path.Combine(worktree, ".git"), $"gitdir: {evil.Replace('\\', '/')}\n");
+        File.WriteAllText(Path.Combine(worktree, "work.txt"), "the worker's change\n");
+
+        var committed = await GitWorkspace.CommitAllAsync(_repo, worktree, "worker change");
+
+        Assert.True(committed);
+        Assert.False(File.Exists(marker), "a command from the worker's own git config ran outside the sandbox");
+        var (_, log) = await GitWorkspace.RunAsync(_repo, ["log", "--oneline", "kairo/x/evil"]);
+        Assert.Contains("worker change", log);
+    }
+
+    [Fact]
+    public async Task A_folder_that_is_not_a_worktree_of_the_repository_has_no_trusted_git_directory_and_nothing_runs_in_it()
+    {
+        await InitRepoAsync();
+        var stranger = Path.Combine(_dir.Path, "stranger");
+        Directory.CreateDirectory(stranger);
+        await GitWorkspace.RunAsync(stranger, ["init", "-q"]);
+
+        Assert.Null(await GitWorkspace.TrustedGitDirAsync(_repo, stranger));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => GitWorkspace.CommitAllAsync(_repo, stranger, "x"));
+    }
+
+    [Fact]
     public async Task A_merge_conflict_is_reported_and_leaves_the_main_folder_clean()
     {
         await InitRepoAsync();
@@ -383,7 +421,7 @@ public class SwarmTests : IDisposable
         var worktree = Path.Combine(_dir.Path, "wt");
         await GitWorkspace.AddWorktreeAsync(_repo, worktree, "kairo/x/w");
         File.WriteAllText(Path.Combine(worktree, "README.md"), "worker version\n");
-        Assert.True(await GitWorkspace.CommitAllAsync(worktree, "worker change"));
+        Assert.True(await GitWorkspace.CommitAllAsync(_repo, worktree, "worker change"));
         File.WriteAllText(Path.Combine(_repo, "README.md"), "main version\n");
         await GitWorkspace.RunAsync(_repo, ["add", "-A"]);
         await GitWorkspace.RunAsync(_repo, ["commit", "-q", "-m", "main change"]);
@@ -519,6 +557,8 @@ public class SwarmServiceTests : IDisposable
         _swarms = new SwarmStore(Path.Combine(_dir.Path, "swarms.db"));
         _sessions = new Kairo.Core.Sessions.SessionStore(Path.Combine(_dir.Path, "data.db"));
         _settings = new Kairo.Host.SettingsService(Path.Combine(_dir.Path, "user"), new Kairo.Core.Secrets.InMemorySecretStore());
+        // These tests are about the swarm, not the fence: workers would otherwise need a sandbox, which this host does not have.
+        _settings.Update(new Kairo.Protocol.SettingsUpdate(SandboxShell: "off"));
     }
 
     public void Dispose()

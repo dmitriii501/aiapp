@@ -139,8 +139,15 @@ public sealed class TaskUpdateTool(ISwarmHost host, string agent) : SwarmTool(ho
         var note = "";
         if (status == TaskState.Done && !IsLead)
         {
-            var committed = await GitWorkspace.CommitAllAsync(ctx.WorkingDirectory, $"kairo: task #{seq} {task.Title}", ct).ConfigureAwait(false);
-            note = committed ? " Your changes are committed in your branch." : " There was nothing to commit.";
+            try
+            {
+                var committed = await GitWorkspace.CommitAllAsync(Host.MainDirectory, ctx.WorkingDirectory, $"kairo: task #{seq} {task.Title}", ct).ConfigureAwait(false);
+                note = committed ? " Your changes are committed in your branch." : " There was nothing to commit.";
+            }
+            catch (InvalidOperationException ex)
+            {
+                note = $" Your changes could not be committed ({ex.Message}); the lead will see the state of your worktree.";
+            }
         }
 
         Host.Store.UpdateTask(Host.SwarmId, seq, status, result);
@@ -347,7 +354,14 @@ public sealed class MergeAgentTool(ISwarmHost host, string agent) : SwarmTool(ho
     {
         var worker = Worker(input);
         // Whatever the worker left uncommitted goes into its branch first.
-        await GitWorkspace.CommitAllAsync(worker.WorkingDirectory, $"kairo: remaining changes of {worker.Name}", ct).ConfigureAwait(false);
+        try
+        {
+            await GitWorkspace.CommitAllAsync(Host.MainDirectory, worker.WorkingDirectory, $"kairo: remaining changes of {worker.Name}", ct).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ToolResult.Error($"Nothing was merged: {ex.Message}.");
+        }
         var result = await GitWorkspace.MergeAsync(Host.MainDirectory, worker.Branch!, $"kairo: merge {worker.Name}", ct).ConfigureAwait(false);
         if (result.Merged)
             return new ToolResult($"Merged {worker.Branch} into the main folder.\n{result.Output}".TrimEnd());

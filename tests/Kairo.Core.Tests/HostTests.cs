@@ -193,7 +193,7 @@ public class HostTests : IDisposable
         var removed = _settings.RemoveSandboxRead(addedAgain.SandboxRead!.Single());
         var offAgain = _settings.Update(new SettingsUpdate(SandboxShell: "off", SandboxNetwork: false));
 
-        Assert.Equal(("off", false), (off.SandboxShell, off.SandboxNetwork));
+        Assert.Equal(("workers", false), (off.SandboxShell, off.SandboxNetwork)); // nothing set: workers only
         Assert.Equal(("autonomous", true), (on.SandboxShell, on.SandboxNetwork));
         Assert.Equal([tools.Replace('\\', '/')], added.SandboxRead);
         Assert.Single(addedAgain.SandboxRead!);
@@ -201,7 +201,7 @@ public class HostTests : IDisposable
         Assert.Empty(removed.SandboxRead!);
         Assert.Equal(("off", false), (offAgain.SandboxShell, offAgain.SandboxNetwork));
         Assert.Throws<RpcException>(() => _settings.Update(new SettingsUpdate(SandboxShell: "strict")));
-        Assert.Equal(["off", "autonomous", "always"], KairoConfig.SandboxShellModes);
+        Assert.Equal(["off", "workers", "autonomous", "always"], KairoConfig.SandboxShellModes);
     }
 
     [Fact]

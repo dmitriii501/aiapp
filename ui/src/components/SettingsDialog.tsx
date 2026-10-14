@@ -5,8 +5,9 @@ import type { Mode, PcApp, ProviderId, SandboxShell } from "../bridge/protocol";
 import { MODE_LABELS } from "./modes";
 
 const SANDBOX_MODES: { id: SandboxShell; label: string }[] = [
+  { id: "workers", label: "Для воркеров роя (по умолчанию)" },
   { id: "off", label: "Выключена" },
-  { id: "autonomous", label: "Для режима без подтверждений и роя" },
+  { id: "autonomous", label: "Для воркеров роя и режима без подтверждений" },
   { id: "always", label: "Для всех команд" },
 ];
 
@@ -37,7 +38,7 @@ export function SettingsDialog() {
   const [key, setKey] = useState("");
   const [braveKey, setBraveKey] = useState("");
   const [jevKey, setJevKey] = useState("");
-  const [sandboxShell, setSandboxShell] = useState<SandboxShell>(settings?.sandboxShell ?? "off");
+  const [sandboxShell, setSandboxShell] = useState<SandboxShell>(settings?.sandboxShell ?? "workers");
   const [sandboxNetwork, setSandboxNetwork] = useState(settings?.sandboxNetwork ?? false);
   const [pcEnabled, setPcEnabled] = useState(settings?.pcEnabled ?? false);
   const [pcVision, setPcVision] = useState(settings?.pcVision ?? false);
@@ -269,7 +270,7 @@ export function SettingsDialog() {
           <h3 className="dialog__section">Песочница для команд</h3>
           <Field
             label="Где запускать команды Shell в песочнице"
-            hint="Команды видят только папку сессии, а сети нет. git внутри не работает. Файловые инструменты тоже остаются в этой папке."
+            hint="Команды видят только свою папку, а сети нет. git внутри не запускается: воркеры смотрят репозиторий инструментом Git (только чтение), коммиты делает рой. Файловые инструменты тоже остаются в этой папке."
           >
             <select className="input" value={sandboxShell} onChange={(e) => setSandboxShell(e.target.value as SandboxShell)}>
               {SANDBOX_MODES.map((m) => (

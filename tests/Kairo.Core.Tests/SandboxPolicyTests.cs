@@ -44,6 +44,9 @@ public sealed class SandboxPolicyTests : IDisposable
 
     [Theory]
     [InlineData("off", PermissionMode.Bypass, true, false)]
+    [InlineData("workers", PermissionMode.Bypass, false, false)]
+    [InlineData("workers", PermissionMode.Default, true, true)]
+    [InlineData("workers", PermissionMode.Bypass, true, true)]
     [InlineData("autonomous", PermissionMode.Default, false, false)]
     [InlineData("autonomous", PermissionMode.AcceptEdits, false, false)]
     [InlineData("autonomous", PermissionMode.Bypass, false, true)]
@@ -58,11 +61,32 @@ public sealed class SandboxPolicyTests : IDisposable
     }
 
     [Fact]
-    public void Without_a_setting_nothing_is_sandboxed()
+    public void Without_a_setting_swarm_workers_are_sandboxed_and_the_users_own_sessions_are_not()
     {
         var policy = new SandboxPolicy(new KairoConfig(), new FakeProvider(_ => new FakeSandbox()));
 
-        Assert.Null(policy.For(PermissionMode.Bypass, swarmWorker: true, [_root]));
+        Assert.NotNull(policy.For(PermissionMode.Default, swarmWorker: true, [_root]));
+        Assert.Null(policy.For(PermissionMode.Bypass, swarmWorker: false, [_root]));
+        Assert.Null(policy.For(PermissionMode.Default, swarmWorker: false, [_root]));
+    }
+
+    [Fact]
+    public void Off_in_the_users_file_turns_the_default_for_workers_off()
+    {
+        var policy = new SandboxPolicy(Config("[sandbox]\nshell = \"off\""), new FakeProvider(_ => new FakeSandbox()));
+
+        Assert.Null(policy.For(PermissionMode.Default, swarmWorker: true, [_root]));
+    }
+
+    [Fact]
+    public async Task A_worker_whose_sandbox_cannot_be_made_runs_nothing_and_is_told_how_to_turn_it_off()
+    {
+        var policy = new SandboxPolicy(new KairoConfig(), provider: null);
+
+        var sandbox = policy.For(PermissionMode.Default, swarmWorker: true, [_root]);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sandbox!.RunAsync(new ProcessLaunch("x.exe", [], _root, 1000), default));
+        Assert.Contains("\"off\" turns it off", ex.Message);
     }
 
     [Fact]

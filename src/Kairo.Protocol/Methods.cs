@@ -118,7 +118,7 @@ public sealed record Settings(
     bool Ready,
     bool BraveKey = false,
     bool JevKey = false,
-    string SandboxShell = "off",
+    string SandboxShell = "workers",
     bool SandboxNetwork = false,
     IReadOnlyList<string>? SandboxRead = null,
     bool PcEnabled = false,

@@ -250,6 +250,9 @@ public sealed class SwarmRunner(SwarmStore store, SessionStore sessions, IModelP
             .Select(t => !isLead && t.Spec.Name is "Write" or "Edit" ? new ConfinedTool(t) : t)
             .ToList();
         tools.AddRange(SwarmToolsFor(info));
+        // git does not start in the sandbox: a sandboxed worker looks at its repository through the read-only Git tool instead.
+        if (!isLead && ctx.Sandbox is not null)
+            tools.Add(new GitReadTool(MainDirectory, info.WorkingDirectory));
 
         var rules = new PermissionRules();
         rules.Allow.AddRange(setup.Rules.Allow);

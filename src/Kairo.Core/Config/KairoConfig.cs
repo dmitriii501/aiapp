@@ -51,7 +51,7 @@ namespace Kairo.Core.Config;
 /// deadline_ms = 3000                             # slower than this and the step goes to the big model
 ///
 /// [sandbox]                                    # user file only
-/// shell = "autonomous"                           # off | autonomous (no-confirmation mode, swarm workers) | always
+/// shell = "workers"                              # workers (default: swarm workers) | off | autonomous (also the no-confirmation mode) | always
 /// network = false                                # outgoing connections from sandboxed commands
 /// read = ["C:/Python313"]                        # extra folders they may read (toolchains outside Program Files)
 ///
@@ -89,8 +89,9 @@ public sealed class KairoConfig
     public string? SearxngUrl { get; set; }
 
     /// <summary>
-    /// Where shell commands run in the Windows sandbox (<c>[sandbox] shell</c>): "off" (default), "autonomous" (sessions without
-    /// confirmations and swarm workers) or "always". Read from the user's file only: a repository must not weaken it.
+    /// Where shell commands run in the Windows sandbox (<c>[sandbox] shell</c>): "workers" (swarm workers only; what an unset value
+    /// means), "off", "autonomous" (swarm workers and sessions without confirmations) or "always". Read from the user's file only: a
+    /// repository must not weaken it.
     /// </summary>
     public string? SandboxShell { get; set; }
 
@@ -145,7 +146,7 @@ public sealed class KairoConfig
     /// <summary>Hooks (<c>[[hooks]]</c>). Commands that run on the user's machine: read from the user's file only.</summary>
     public List<HookConfig> Hooks { get; } = [];
 
-    public static readonly string[] SandboxShellModes = ["off", "autonomous", "always"];
+    public static readonly string[] SandboxShellModes = ["off", "workers", "autonomous", "always"];
 
     public const int DefaultContextWindow = 128_000;
     public const double DefaultCompactAt = 0.8;
@@ -374,7 +375,7 @@ public sealed class KairoConfig
             if (String(sandbox, "shell") is { } shell)
             {
                 if (!SandboxShellModes.Contains(shell, StringComparer.OrdinalIgnoreCase))
-                    throw new FormatException($"{source}: [sandbox] shell must be \"off\", \"autonomous\" or \"always\", not \"{shell}\".");
+                    throw new FormatException($"{source}: [sandbox] shell must be \"off\", \"workers\", \"autonomous\" or \"always\", not \"{shell}\".");
                 SandboxShell = shell.ToLowerInvariant();
             }
             if (sandbox.TryGetValue("network", out var net) && net is bool allowNetwork)
