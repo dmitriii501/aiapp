@@ -80,7 +80,8 @@ internal sealed class ScriptedDecisionModel(Func<DecisionRequest, int, DecisionR
     }
 
     /// <summary>An answer that picks the first option the predicate accepts (or the option with the exact key).</summary>
-    public static DecisionResult Pick(DecisionRequest request, Func<ChoiceOption, bool> pick, double confidence = 0.95, double achieved = 0.05, double effect = 0.9)
+    public static DecisionResult Pick(DecisionRequest request, Func<ChoiceOption, bool> pick, double confidence = 0.95, double achieved = 0.05, double effect = 0.9,
+        double? risk = null, double? progress = null)
     {
         var options = ((ChoiceQuestion)request.Questions["next"]).Options;
         var chosen = options.First(pick);
@@ -91,6 +92,10 @@ internal sealed class ScriptedDecisionModel(Func<DecisionRequest, int, DecisionR
         };
         if (request.Questions.ContainsKey("effect"))
             answers["effect"] = new YesNoAnswer(effect);
+        if (risk is { } r && request.Questions.ContainsKey(StepQuestions.RiskId))
+            answers[StepQuestions.RiskId] = new YesNoAnswer(r);
+        if (progress is { } p && request.Questions.ContainsKey(StepQuestions.ProgressId))
+            answers[StepQuestions.ProgressId] = new YesNoAnswer(p);
         return new DecisionResult("scripted", answers, 100, TimeSpan.FromMilliseconds(5));
     }
 

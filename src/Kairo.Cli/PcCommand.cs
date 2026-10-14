@@ -16,6 +16,8 @@ internal static class PcCommand
     public static async Task<int> RunAsync(CliOptions options, string userConfigDir, ISecretStore secrets)
     {
         var args = options.Positional;
+        if (args.Count == 1 && args[0] == "stats")
+            return Stats(userConfigDir);
         if (args.Count < 4 || args[0] != "run")
             return Fail("Usage: kairo pc run <app.exe> \"<sub-goal>\" \"<success criterion>\" [--text name=value]... [--hotkeys \"ctrl+s, enter\"] [--launch] [--steps N]");
 
@@ -65,7 +67,7 @@ internal static class PcCommand
         // Open the connection first, so the first decision is as quick as the rest.
         if (model is IWarmUp warm)
             await warm.WarmUpAsync();
-        var pursue = new PursueLoop(desktop, guard, model, new PursueOptions(MaxSteps: options.PcSteps ?? config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7));
+        var pursue = new PursueLoop(desktop, guard, model, PcTools.OptionsFor(config, PcTools.SharedHistory(config)) with { MaxSteps = options.PcSteps ?? config.PcMaxSteps ?? 25 });
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
         {
@@ -99,6 +101,42 @@ internal static class PcCommand
             }
         }
         return report.Status == PursueStatus.Done ? 0 : 1;
+    }
+
+    /// <summary><c>kairo pc stats</c>: what the decision log says about how the fast model does in each program.</summary>
+    private static int Stats(string userConfigDir)
+    {
+        KairoConfig config;
+        try
+        {
+            config = KairoConfig.Load(userConfigDir, userConfigDir, includeProject: false);
+        }
+        catch (FormatException ex)
+        {
+            return Fail(ex.Message);
+        }
+        if (PcTools.SharedHistory(config) is not { } history)
+            return Fail("Calibration is off ([pc] calibrate = false): nothing is logged.");
+        var baseline = config.PcMinConfidence ?? 0.7;
+        var stats = history.Stats(baseline);
+        if (stats.Count == 0)
+        {
+            Console.WriteLine("No decisions logged yet. Run something with PcPursue or PcRunPolicy first.");
+            return 0;
+        }
+        ConsoleUi.Write(ConsoleColor.Magenta, "Kairo · PC decisions");
+        ConsoleUi.Write(ConsoleColor.DarkGray, $"  {history.Count} logged · your bar {baseline:0.00} · pc-decisions.jsonl in the config folder\n\n");
+        foreach (var app in stats)
+        {
+            var raised = app.Threshold > baseline + 1e-9;
+            ConsoleUi.Write(ConsoleColor.Gray, $"{app.App}: {app.Executed} steps taken, {app.SuccessRate:P0} changed the screen; bar ");
+            ConsoleUi.Write(raised ? ConsoleColor.Yellow : ConsoleColor.Green, $"{app.Threshold:0.00}{(raised ? " (raised: steps kept failing)" : "")}\n");
+            foreach (var (band, count, rate) in app.Bands)
+                Console.WriteLine($"    confidence {band}: {count} steps, {rate:P0} worked");
+            if (app.Handovers.Count > 0)
+                Console.WriteLine("    handed to the big model: " + string.Join(", ", app.Handovers.OrderByDescending(h => h.Value).Select(h => $"{h.Key} {h.Value}")));
+        }
+        return 0;
     }
 
     private static int Fail(string message)

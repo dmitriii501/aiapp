@@ -18,8 +18,14 @@ public sealed record PursuePlan(string Subgoal, string SuccessCriterion, IReadOn
 /// <param name="SettleMs">The pause right after an action. Short on purpose: the loop looks again and, if nothing moved yet, waits for the screen itself.</param>
 /// <param name="ReactWaitMs">How long to wait between looks while the screen still looks as it did before the action.</param>
 /// <param name="ReactRetries">How many more looks to take before the screen is taken to be unchanged.</param>
+/// <param name="SemanticChecks">Ask the fast model two more yes/no questions in the same request: is the most direct step hard to undo, and are the recent steps going in circles. A yes only ever hands a step over.</param>
+/// <param name="MaxSemanticRisk">The probability of "hard to undo" from which the step goes to the big model and the user (set from <c>kairo jev probe</c>).</param>
+/// <param name="MinProgress">Below this probability that the recent steps make progress, twice in a row, the loop hands over.</param>
+/// <param name="ConfidenceFor">The confidence a program needs, from the decision log; null uses <paramref name="MinConfidence"/> for every program.</param>
+/// <param name="Log">Where decisions are written.</param>
 public sealed record PursueOptions(int MaxSteps = 25, double MinConfidence = 0.7, double MinEffect = 0.35, int StallLimit = 3, int MaxElements = 250,
-    int SettleMs = 30, int ReactWaitMs = 70, int ReactRetries = 2);
+    int SettleMs = 30, int ReactWaitMs = 70, int ReactRetries = 2, bool SemanticChecks = true, double MaxSemanticRisk = 0.5, double MinProgress = 0.3,
+    Func<string, double>? ConfidenceFor = null, IDecisionLog? Log = null);
 
 public enum PursueStatus
 {
@@ -146,7 +152,12 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
         var (stalled, noEffect, failures) = (0, 0, 0);
         var recent = new List<string>();  // the last few steps with what they did to the screen
         var reacting = false;             // an action was taken and its effect is not yet seen
+        var circles = 0;                  // answers in a row that said the recent steps go nowhere
+        (string App, string Kind, double Confidence)? lastStep = null; // the taken step whose effect has not been logged yet
         var settle = TimeSpan.FromMilliseconds(_options.SettleMs);
+
+        void Log(string app, string kind, double confidence, bool executed, string result) =>
+            _options.Log?.Append(new DecisionRecord(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), app, kind, confidence, executed, result));
 
         PursueReport Finish(PursueStatus status, string reason, string? pending = null) => new(status, reason, steps, last, pending);
 
@@ -161,6 +172,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             if (guard.Refusal(info) is { } refusal)
                 return Finish(PursueStatus.Failed, refusal);
 
+            var minConfidence = _options.ConfidenceFor?.Invoke(info.Process) ?? _options.MinConfidence;
             var clock = Stopwatch.StartNew();
             Observation observation;
             var before = last;
@@ -190,7 +202,10 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
                 recent.Add($"{previous} -> {(changes is null ? "no visible change" : "the screen changed")}");
                 if (recent.Count > 4)
                     recent.RemoveAt(0);
+                if (lastStep is { } taken)
+                    Log(taken.App, taken.Kind, taken.Confidence, true, changes is null ? "unchanged" : "changed");
             }
+            lastStep = null;
             reacting = false;
 
             // The screen looks the same as before the last action: it did nothing, or has not reacted yet.
@@ -224,12 +239,12 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             {
                 try
                 {
-                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous, changes, recent), ct).ConfigureAwait(false);
+                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous, changes, recent, _options.SemanticChecks), ct).ConfigureAwait(false);
                 }
                 catch (DecisionException ex) when (ex.Kind is DecisionFailure.Timeout or DecisionFailure.Busy or DecisionFailure.Unavailable)
                 {
                     // One lost answer (a dead connection, a hiccup) should not end a run that was going well: ask again once, on a fresh look.
-                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous, changes, recent), ct).ConfigureAwait(false);
+                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous, changes, recent, _options.SemanticChecks), ct).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -247,6 +262,10 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             var achieved = decision.YesNo("achieved").Probability;
             var picked = candidates.First(c => c.Key == choice.Choice);
 
+            // What was decided, for the log: the kind of step and how sure the model was.
+            var kind = picked.Action?.Kind.ToString().ToLowerInvariant() ?? picked.Key;
+            void LogStep(bool executed, string result) => Log(info.Process, kind, choice.Confidence, executed, result);
+
             void Record(bool executed, string note, long actMs = 0)
             {
                 var step = new PursueStep(number, picked.Description, choice.Confidence, observeMs, decideMs, actMs, executed, note);
@@ -259,37 +278,62 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
                 noEffect = effect.Probability < _options.MinEffect ? noEffect + 1 : 0;
             if (noEffect >= 2)
             {
+                LogStep(false, "no-effect");
                 Record(false, "the last steps had no effect");
                 return Finish(PursueStatus.Escalated, "the last two steps did not have the effect that was intended", picked.Description);
             }
 
             if (picked.Key == Candidates.Done || achieved >= 0.9)
             {
-                if (achieved >= 0.5 && (picked.Key == Candidates.Done ? choice.Confidence >= _options.MinConfidence : true))
+                if (achieved >= 0.5 && (picked.Key == Candidates.Done ? choice.Confidence >= minConfidence : true))
                 {
+                    LogStep(false, "done");
                     Record(false, $"done (achieved {achieved:0.00})");
                     return Finish(PursueStatus.Done, $"the success criterion is met (probability {achieved:0.00})");
                 }
+                LogStep(false, "unsure-done");
                 Record(false, "said done, not sure");
                 return Finish(PursueStatus.Escalated, $"the model thinks the goal is met but is not sure ({achieved:0.00}); check the screen", picked.Description);
             }
 
             if (picked.Key == Candidates.Stuck)
             {
+                LogStep(false, "stuck");
                 Record(false, "stuck");
                 return Finish(PursueStatus.Stuck, "none of the options moves toward the goal");
             }
 
-            if (choice.Confidence < _options.MinConfidence)
+            // Going in circles: the steps repeat or undo each other. Asked in the same request, so it costs no time; two answers in a row.
+            if (_options.SemanticChecks && decision.Answers.TryGetValue(StepQuestions.ProgressId, out var progressAnswer) && progressAnswer is YesNoAnswer progress)
+                circles = progress.Probability < _options.MinProgress ? circles + 1 : 0;
+            if (circles >= 2)
             {
-                Record(false, $"not sure ({choice.Confidence:0.00})");
-                return Finish(PursueStatus.Escalated, $"the model is not sure which step is right (confidence {choice.Confidence:0.00})", picked.Description);
+                LogStep(false, "circles");
+                Record(false, "the recent steps go in circles");
+                return Finish(PursueStatus.Escalated, "the recent steps repeat or undo each other and do not get closer to the goal", picked.Description);
+            }
+
+            if (choice.Confidence < minConfidence)
+            {
+                LogStep(false, "low-confidence");
+                Record(false, $"not sure ({choice.Confidence:0.00}, needs {minConfidence:0.00})");
+                return Finish(PursueStatus.Escalated, $"the model is not sure which step is right (confidence {choice.Confidence:0.00}, this program needs {minConfidence:0.00})", picked.Description);
             }
 
             if (picked.Risk is { } risk)
             {
+                LogStep(false, "risky");
                 Record(false, $"risky: {risk}");
                 return Finish(PursueStatus.Escalated, $"a step that needs the user's say: {risk}", picked.Description);
+            }
+
+            // What the word list does not know (publish, share, deploy, merge…): the fast model's own view of the most direct step.
+            if (_options.SemanticChecks && decision.Answers.TryGetValue(StepQuestions.RiskId, out var riskAnswer) && riskAnswer is YesNoAnswer semanticRisk
+                && semanticRisk.Probability >= _options.MaxSemanticRisk)
+            {
+                LogStep(false, "semantic-risk");
+                Record(false, $"risky (the fast model, {semanticRisk.Probability:0.00})");
+                return Finish(PursueStatus.Escalated, $"the fast model judges the next step hard to undo ({semanticRisk.Probability:0.00}); it needs the user's say", picked.Description);
             }
 
             // The stop key is looked at once more right before acting: the model may have taken a while to answer.
@@ -303,6 +347,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
 
             if (!outcome.Ok)
             {
+                LogStep(true, "failed");
                 Record(false, $"failed: {outcome.Message}", actMs);
                 if (++failures >= 2)
                     return Finish(PursueStatus.Escalated, $"the action failed twice: {outcome.Message}", picked.Description);
@@ -312,6 +357,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
 
             failures = 0;
             reacting = true;
+            lastStep = (info.Process, kind, choice.Confidence);
             previous = picked.Description;
             Record(true, outcome.Message, actMs);
         }
@@ -331,7 +377,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
         }
     }
 
-    private static DecisionRequest Request(Observation observation, PursuePlan plan, List<Candidate> candidates, string? previous, string? changes, List<string> recent)
+    private static DecisionRequest Request(Observation observation, PursuePlan plan, List<Candidate> candidates, string? previous, string? changes, List<string> recent, bool semantic)
     {
         var stateJson = JsonSerializer.Serialize(new Dictionary<string, string?>
         {
@@ -355,6 +401,12 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
                 WhenYes: "the screen shows the success criterion is met",
                 WhenNo: "the sub-goal is not achieved yet"),
         };
+        if (semantic)
+        {
+            questions[StepQuestions.RiskId] = StepQuestions.Risk();
+            if (recent.Count >= 2)
+                questions[StepQuestions.ProgressId] = StepQuestions.Progress();
+        }
         if (previous is not null)
         {
             questions["effect"] = new YesNoQuestion(

@@ -112,6 +112,12 @@ public sealed class KairoConfig
     /// <summary>Every program may be controlled, not only the listed ones (<c>[pc] all_apps</c>, default false). Terminals, password managers and system tools stay out of reach. User's file only.</summary>
     public bool? PcAllApps { get; set; }
 
+    /// <summary>The fast loop keeps a log of its decisions (program, kind of step, confidence, what the screen did; no content) and raises its bar for a program it keeps getting wrong (<c>[pc] calibrate</c>, default true). User's file only.</summary>
+    public bool? PcCalibrate { get; set; }
+
+    /// <summary>The fast loop's two extra yes/no questions: is the next step hard to undo, are the recent steps going in circles (<c>[pc] semantic_checks</c>, default true). They can only hand steps over. User's file only.</summary>
+    public bool? PcSemanticChecks { get; set; }
+
     /// <summary>The on-screen banner while PC control works (<c>[pc] overlay</c>, default true). User's file only.</summary>
     public bool? PcOverlay { get; set; }
 
@@ -183,14 +189,14 @@ public sealed class KairoConfig
             var userHooks = config.Hooks.ToList();
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             var (decisionModel, decisionUrl, decisionDeadline) = (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs);
-            var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision, pcAutonomous, pcAllApps) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps);
+            var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision, pcAutonomous, pcAllApps, pcCalibrate, pcSemantic) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps, config.PcCalibrate, config.PcSemanticChecks);
             var userRead = config.SandboxRead.ToList();
             var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
             (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs) = (decisionModel, decisionUrl, decisionDeadline);
             // Which programs may be driven is the user's call alone.
-            (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision, pcAutonomous, pcAllApps);
+            (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps, config.PcCalibrate, config.PcSemanticChecks) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision, pcAutonomous, pcAllApps, pcCalibrate, pcSemantic);
             config.PcApps.Clear();
             config.PcApps.AddRange(pcApps);
             // The sandbox is the user's fence; a project can neither lift it nor open more of the disk to it.
@@ -334,6 +340,10 @@ public sealed class KairoConfig
                 PcVision = useVision;
             if (pc.TryGetValue("all_apps", out var allValue) && allValue is bool allApps)
                 PcAllApps = allApps;
+            if (pc.TryGetValue("calibrate", out var calibrateValue) && calibrateValue is bool calibrate)
+                PcCalibrate = calibrate;
+            if (pc.TryGetValue("semantic_checks", out var semanticValue) && semanticValue is bool semanticChecks)
+                PcSemanticChecks = semanticChecks;
             if (pc.TryGetValue("autonomous", out var autoValue) && autoValue is bool autonomous)
                 PcAutonomous = autonomous;
             if (pc.TryGetValue("max_steps", out var steps) && steps is long stepCount)

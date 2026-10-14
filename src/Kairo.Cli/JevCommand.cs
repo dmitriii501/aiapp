@@ -36,8 +36,8 @@ internal static class JevCommand
 
     public static async Task<int> RunAsync(CliOptions options, string userConfigDir, ISecretStore secrets)
     {
-        if (options.Positional.FirstOrDefault() != "bench")
-            return Fail("Usage: kairo jev bench [n]");
+        if (options.Positional.FirstOrDefault() is not ("bench" or "probe"))
+            return Fail("Usage: kairo jev bench [n] | kairo jev probe");
 
         KairoConfig config;
         try
@@ -51,6 +51,9 @@ internal static class JevCommand
 
         if (ProviderFactory.DecisionModelOf(config, secrets) is not JevDecisionModel jev)
             return Fail("No Jev key. Enter it in Settings (\"Ключ Jev\") or set TYPESAFE_API_KEY.");
+
+        if (options.Positional[0] == "probe")
+            return await JevProbe.RunAsync(jev);
 
         var rounds = options.Positional.Count > 1 && int.TryParse(options.Positional[1], out var n) ? Math.Clamp(n, 1, 200) : 12;
         ConsoleUi.Write(ConsoleColor.Magenta, "Kairo · Jev bench");

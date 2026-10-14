@@ -16,10 +16,27 @@ namespace Kairo.PcControl;
 public static class PcTools
 {
     private static int _warmed;
+    private static DecisionHistory? _history;
+
+    /// <summary>The decision log in the user's config folder, shared by every run in this process; null when the user turned calibration off.</summary>
+    public static DecisionHistory? SharedHistory(KairoConfig config) =>
+        config.PcCalibrate == false ? null : _history ??= DecisionHistory.Open(KairoConfig.UserConfigDirectory);
+
+    /// <summary>The fast loop's options from the user's config: limits, the confidence bar (per program, from the log), the extra questions.</summary>
+    public static PursueOptions OptionsFor(KairoConfig config, IDecisionLog? log)
+    {
+        var baseline = config.PcMinConfidence ?? 0.7;
+        return new PursueOptions(
+            MaxSteps: config.PcMaxSteps ?? 25,
+            MinConfidence: baseline,
+            SemanticChecks: config.PcSemanticChecks != false,
+            ConfidenceFor: log is DecisionHistory history ? app => history.MinConfidenceFor(app, baseline) : null,
+            Log: log);
+    }
 
     /// <summary>The tools, or none when PC control is off or no application was listed.</summary>
     /// <param name="overlay">The on-screen banner; by default the real one when the real desktop is used (and <c>[pc] overlay</c> is not off).</param>
-    public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null, ControlOverlay? overlay = null)
+    public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null, ControlOverlay? overlay = null, IDecisionLog? log = null)
     {
         if (config.PcEnabled != true || (config.PcApps.Count == 0 && config.PcAllApps != true))
             return [];
@@ -41,7 +58,7 @@ public static class PcTools
             desktop ?? UiaDesktop.Shared,
             new PcGuard(config.PcApps, config.PcAllApps == true),
             decisionModel,
-            new PursueOptions(MaxSteps: config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7),
+            OptionsFor(config, log ?? (desktop is null ? SharedHistory(config) : null)),
             overlay ?? (desktop is null && config.PcOverlay != false ? ControlOverlay.Shared : null),
             vision: config.PcVision == true,
             autonomous: config.PcAutonomous == true);

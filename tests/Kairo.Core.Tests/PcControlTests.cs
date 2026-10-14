@@ -265,11 +265,11 @@ public sealed class PursueLoopTests
         Assert.Equal("The editor contains hello", state.GetProperty("success_criterion").GetString());
         Assert.Equal("notepad.exe", state.GetProperty("app").GetString());
         Assert.Contains("[e1] edit \"Text editor\"", state.GetProperty("screen").GetString());
-        Assert.Equal(["next", "achieved"], first.Questions.Keys);
+        Assert.Equal(["next", "achieved", "risk"], first.Questions.Keys);
         var options = ((ChoiceQuestion)first.Questions["next"]).Options.Select(o => o.Key).ToList();
         Assert.Equal(["type:e1:body", "invoke:e2", "done", "stuck"], options);
         // From the second step on it is also asked whether the step before worked.
-        Assert.Equal(["next", "achieved", "effect"], model.Requests[1].Questions.Keys);
+        Assert.Equal(["next", "achieved", "risk", "effect"], model.Requests[1].Questions.Keys);
         Assert.Contains("put the text [body]", model.Requests[1].State.Value.GetProperty("previous_action").GetString());
     }
 
