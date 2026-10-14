@@ -50,7 +50,8 @@ public sealed partial class MainWindow : Window
             notify: ev => _rpc.NotifyAsync(Notifications.AgentEvent, ev, ctx.AgentEventDto),
             sessionsChanged: () => _rpc.NotifyAsync(Notifications.SessionsChanged, new Empty(), ctx.Empty),
             mcp: mcpManager,
-            sandboxes: sandboxes);
+            sandboxes: sandboxes,
+            extraTools: () => PcToolsNow(settings));
         var swarmStore = new SwarmStore(SwarmStore.DefaultPath);
         var swarms = new SwarmService(
             swarmStore,
@@ -103,6 +104,20 @@ public sealed partial class MainWindow : Window
         };
 
         _ = InitializeWebViewAsync();
+    }
+
+    /// <summary>Control of the desktop, when the user turned it on and listed programs; read at each turn so the settings apply at once.</summary>
+    private static IReadOnlyList<Kairo.Core.Tools.ITool> PcToolsNow(SettingsService settings)
+    {
+        try
+        {
+            var config = settings.LoadUser();
+            return Kairo.PcControl.PcTools.For(config, () => ProviderFactory.DecisionModelOf(config, settings.Secrets));
+        }
+        catch (FormatException)
+        {
+            return [];
+        }
     }
 
     /// <summary>Native folder picker, always on the UI thread. The only way a new folder becomes a workspace.</summary>

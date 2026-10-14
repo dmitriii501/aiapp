@@ -26,7 +26,8 @@ public sealed class AgentHost(
     Func<Task> sessionsChanged,
     Func<KairoConfig, IModelProvider>? createProvider = null,
     McpManager? mcp = null,
-    ISandboxProvider? sandboxes = null)
+    ISandboxProvider? sandboxes = null,
+    Func<IReadOnlyList<ITool>>? extraTools = null)
 {
     public const string NewSessionTitle = "Новая сессия";
 
@@ -35,8 +36,8 @@ public sealed class AgentHost(
     private readonly ConcurrentDictionary<string, PendingPermission> _pending = new();
     private readonly Func<KairoConfig, IModelProvider> _createProvider = createProvider ?? (c => ProviderFactory.Create(c, settings.Secrets));
 
-    /// <summary>Built-in tools plus whatever MCP servers are connected right now.</summary>
-    private ToolRegistry Tools() => new(BuiltinTools.All(settings.WebSearch, userConfigDirectory: settings.UserConfigDirectory).Concat(mcp?.Tools ?? []));
+    /// <summary>Built-in tools, whatever MCP servers are connected right now, and the host's own (PC control on Windows).</summary>
+    private ToolRegistry Tools() => new(BuiltinTools.All(settings.WebSearch, userConfigDirectory: settings.UserConfigDirectory).Concat(mcp?.Tools ?? []).Concat(extraTools?.Invoke() ?? []));
 
     private sealed class LiveSession(SessionInfo info, List<ChatMessage> history, PermissionEngine permissions, ToolContext tools)
     {

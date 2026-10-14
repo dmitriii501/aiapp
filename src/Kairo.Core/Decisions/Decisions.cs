@@ -73,6 +73,12 @@ public interface IDecisionModel
     Task<DecisionResult> DecideAsync(DecisionRequest request, CancellationToken ct);
 }
 
+/// <summary>A decision model that can open its connection ahead of the first question.</summary>
+public interface IWarmUp
+{
+    Task WarmUpAsync(CancellationToken ct = default);
+}
+
 public static class DecisionModelExtensions
 {
     public static async Task<ChoiceAnswer> ChooseAsync(this IDecisionModel model, DecisionState state, ChoiceQuestion question, CancellationToken ct) =>

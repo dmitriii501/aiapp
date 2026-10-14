@@ -19,6 +19,11 @@ internal sealed class CliOptions
     public long? MaxTokens { get; private set; }
     public int? MaxMinutes { get; private set; }
     public int? Concurrency { get; private set; }
+    public List<string> PcTexts { get; } = [];
+    public string? PcHotkeys { get; private set; }
+    public bool PcLaunch { get; private set; }
+    public bool PcKeep { get; private set; }
+    public int? PcSteps { get; private set; }
     public bool Help { get; private set; }
 
     public const string Usage = """
@@ -32,6 +37,7 @@ internal sealed class CliOptions
           kairo sessions             list recent sessions
           kairo swarm "<goal>"       run a swarm: a lead and workers in git worktrees (see docs/specs/swarm.md)
           kairo swarm list | status <id> | resume <id> | clean <id>   (clean removes the workers' worktrees and merged branches)
+          kairo pc run <app.exe> "<sub-goal>" "<success>"   the fast loop (Jev) on one program, with timings: --text name=value, --hotkeys "ctrl+s", --launch, --steps N
           kairo jev bench [n]        measure the Jev decision model: latency (cold, warm, parallel) and accuracy on English and Russian UI
 
         Options:
@@ -78,11 +84,17 @@ internal sealed class CliOptions
                 case "sessions" when o.Command is null: o.Command = "sessions"; break;
                 case "swarm" when o.Command is null: o.Command = "swarm"; break;
                 case "jev" when o.Command is null: o.Command = "jev"; break;
+                case "pc" when o.Command is null: o.Command = "pc"; break;
+                case "--text": o.PcTexts.Add(Next()); break;
+                case "--hotkeys": o.PcHotkeys = Next(); break;
+                case "--launch": o.PcLaunch = true; break;
+                case "--keep": o.PcKeep = true; break;
+                case "--steps": o.PcSteps = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--workers": o.Workers = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--max-tokens": o.MaxTokens = long.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--max-minutes": o.MaxMinutes = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--concurrency": o.Concurrency = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
-                case not null when o.Command is "swarm" or "jev" && !a.StartsWith('-'): o.Positional.Add(a); break;
+                case not null when o.Command is "swarm" or "jev" or "pc" && !a.StartsWith('-'): o.Positional.Add(a); break;
                 default: throw new ArgumentException($"Unknown argument '{a}'. Run 'kairo --help'.");
             }
         }

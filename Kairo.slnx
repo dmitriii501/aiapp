@@ -8,6 +8,7 @@
     <Project Path="src/Kairo.Host/Kairo.Host.csproj" />
     <Project Path="src/Kairo.Mcp/Kairo.Mcp.csproj" />
     <Project Path="src/Kairo.Protocol/Kairo.Protocol.csproj" />
+    <Project Path="src/Kairo.PcControl/Kairo.PcControl.csproj" />
     <Project Path="src/Kairo.Providers/Kairo.Providers.csproj" />
     <Project Path="src/Kairo.Swarm/Kairo.Swarm.csproj" />
     <Project Path="src/Kairo.Tools/Kairo.Tools.csproj" />

@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\Kairo.Host\Kairo.Host.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Mcp\Kairo.Mcp.csproj" />
     <ProjectReference Include="..\..\src\Kairo.Windows\Kairo.Windows.csproj" />
+    <ProjectReference Include="..\..\src\Kairo.PcControl\Kairo.PcControl.csproj" />
   </ItemGroup>
 
   <ItemGroup>

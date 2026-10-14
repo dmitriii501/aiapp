@@ -43,6 +43,9 @@ if (options.Command == "sessions")
     return 0;
 }
 
+if (options.Command == "pc")
+    return await PcCommand.RunAsync(options, userConfigDir, new CredentialStore());
+
 if (options.Command == "jev")
     return await JevCommand.RunAsync(options, userConfigDir, new CredentialStore());
 
@@ -129,7 +132,8 @@ if (!options.NoMcp)
 var instructions = SystemPrompt.FindInstructionFiles(cwd, userConfigDir);
 var agent = new Agent(
     provider,
-    new ToolRegistry(BuiltinTools.All(() => ProviderFactory.WebSearchOf(config, secrets), userConfigDirectory: userConfigDir).Concat(mcp.Tools)),
+    new ToolRegistry(BuiltinTools.All(() => ProviderFactory.WebSearchOf(config, secrets), userConfigDirectory: userConfigDir).Concat(mcp.Tools)
+        .Concat(Kairo.PcControl.PcTools.For(config, () => ProviderFactory.DecisionModelOf(config, secrets)))),
     new PermissionEngine(rules, mode),
     ui,
     new ToolContext(cwd) { Sandbox = new SandboxPolicy(config, new AppContainerSandboxProvider()).For(mode, swarmWorker: false, [cwd]) },

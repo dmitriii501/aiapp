@@ -129,7 +129,8 @@ public sealed class PermissionEngine(PermissionRules rules, PermissionMode mode)
         if (Mode == PermissionMode.Plan && call.Risk != RiskLevel.Read)
             return new(PermissionDecision.Deny, "plan mode is read-only");
 
-        if (Mode == PermissionMode.Bypass)
+        // Bypass skips the questions, but driving the user's desktop is not an action it covers: those still ask.
+        if (Mode == PermissionMode.Bypass && call.Risk != RiskLevel.System)
             return new(PermissionDecision.Allow, "bypass mode");
 
         if (Rules.Ask.FirstOrDefault(r => r.Matches(toolName, call, ctx)) is { } ask)

@@ -14,7 +14,7 @@ namespace Kairo.Providers.Jev;
 /// clicked: one long-lived HTTP/2 connection, every question of a step in one request, a hard deadline, and retries only while
 /// they still fit in it.
 /// </summary>
-public sealed class JevDecisionModel : IDecisionModel
+public sealed class JevDecisionModel : IDecisionModel, IWarmUp
 {
     /// <summary>Pinned on purpose: confidence thresholds are tuned per release, and an alias can move under them.</summary>
     public const string DefaultModel = "jev-1.13.0";
