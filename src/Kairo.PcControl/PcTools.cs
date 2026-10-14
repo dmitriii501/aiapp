@@ -62,7 +62,7 @@ public static class PcTools
             overlay ?? (desktop is null && config.PcOverlay != false ? ControlOverlay.Shared : null),
             vision: config.PcVision == true,
             autonomous: config.PcAutonomous == true);
-        var tools = new List<ITool> { new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session) };
+        var tools = new List<ITool> { new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session), new PcCheckTool(session), new PcRunsTool(session) };
         // Pictures only when the user said the model can read them: otherwise the tool would only waste tokens.
         if (config.PcVision == true)
             tools.Insert(3, new PcScreenshotTool(session));
@@ -180,6 +180,18 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
         waitedMs = (int)clock.ElapsedMilliseconds;
         NoteShot(handle, shot);
         return shot;
+    }
+
+    private PcRunQueue? _runs;
+
+    /// <summary>Runs of the fast loop that go on in the background while the big model plans the next step.</summary>
+    public PcRunQueue Runs => _runs ??= new PcRunQueue(Begin);
+
+    /// <summary>Keyboard and mouse serve one thing at a time: while a background run is pending, tools that act on the screen are refused.</summary>
+    public void EnsureIdle(string tool)
+    {
+        if (_runs is { Busy: true })
+            throw new ToolInputException($"A background run is still working on the screen. {tool} would fight it for the keyboard and the mouse: collect it with PcRuns (await, or cancel) first.");
     }
 
     /// <summary>The screen as the model is handed it after a fast run; it counts as shown, so later results are relative to it.</summary>
@@ -318,6 +330,7 @@ internal sealed class PcLaunchTool(PcSession session) : ITool
             throw new ToolInputException($"{name} is not in the list of applications Kairo may control. The user adds it under [pc] apps in config.toml.");
         if (session.Guard.AllowAll && !session.Guard.IsListed(name) && session.Desktop.LaunchRefusal(name) is { } refusal)
             throw new ToolInputException(refusal);
+        session.EnsureIdle("PcLaunch");
         return session.Assess("PcLaunch", name, name);
     }
 
@@ -372,6 +385,7 @@ internal sealed class PcScreenshotTool(PcSession session) : ITool
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
+        session.EnsureIdle("PcScreenshot");
         return session.Assess("PcScreenshot", window.Process, $"{window.Process}: {window.Title}");
     }
 
@@ -438,6 +452,7 @@ internal sealed class PcActTool(PcSession session) : ITool
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
         var (window, action, _) = Parse(input);
+        session.EnsureIdle("PcAct");
         var what = action.Kind == DesktopActionKind.Hotkey ? $"hotkey {action.Text}" : IsPixel(action.Kind) ? action.ToString() : $"{action.Kind} {action.ElementId}";
         return session.Assess("PcAct", window.Process, $"{window.Process}: {what}");
     }
@@ -548,10 +563,13 @@ internal sealed class PcPursueTool(PcSession session) : ITool
             ("texts", "object", "Named texts the fast model may type, e.g. {\"filename\": \"report.txt\"}.", false),
             ("hotkeys", "string", "Shortcuts it may press, comma separated, e.g. 'ctrl+s, enter'.", false),
             ("max_steps", "integer", "Most steps to take (default 25, at most 60).", false),
+            ("background", "boolean", "Start it and return at once: it runs while you plan the next sub-goal (queue that with background=true too); PcRuns await collects the results. Default false.", false),
             ("window", "string", "Window id or program name. Default: the allowed window in front.", false)));
 
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
+        if (!ToolInput.OptionalBool(input, "background"))
+            session.EnsureIdle("PcPursue");
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
         var goal = ToolInput.RequiredString(input, "subgoal").Trim().ReplaceLineEndings(" ");
         return session.Assess("PcPursue", window.Process, $"{window.Process}: {(goal.Length > 100 ? goal[..100] + "…" : goal)}");
@@ -559,7 +577,8 @@ internal sealed class PcPursueTool(PcSession session) : ITool
 
     public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
-        using var banner = session.Begin();
+        var background = ToolInput.OptionalBool(input, "background");
+        using var banner = background ? null : session.Begin();
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
         if (session.DecisionModel() is not { } model)
             return ToolResult.Error("The fast decision model is not set up (no Jev key). Use PcObserve and PcAct to do it step by step.");
@@ -572,9 +591,24 @@ internal sealed class PcPursueTool(PcSession session) : ITool
             (ToolInput.OptionalString(input, "hotkeys") ?? "").Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
         var options = session.Options with { MaxSteps = Math.Clamp(ToolInput.OptionalInt(input, "max_steps") ?? session.Options.MaxSteps, 1, 60) };
 
+        if (background)
+        {
+            var queued = session.Runs.Enqueue(plan.Subgoal, async runCt =>
+            {
+                var done = await new PursueLoop(session.Desktop, session.Guard, model, options).RunAsync(window.Handle, plan, runCt).ConfigureAwait(false);
+                return (done.Status == PursueStatus.Done, Describe(session, done));
+            }, ct);
+            return new ToolResult(Queued(session, queued, plan.Subgoal));
+        }
+
         var report = await new PursueLoop(session.Desktop, session.Guard, model, options).RunAsync(window.Handle, plan, ct).ConfigureAwait(false);
         return new ToolResult(Describe(session, report), IsError: report.Status is PursueStatus.Failed);
     }
+
+    internal static string Queued(PcSession session, int id, string title) =>
+        $"Queued as run r{id} (\"{(title.Length > 80 ? title[..80] + "…" : title)}\"). It runs in the background" +
+        (session.Runs.Snapshot().Count(r => !r.Finished) > 1 ? ", after the runs queued before it" : "") +
+        ". Plan the next step now and queue it too, or collect the results with PcRuns (await). Do not act on the screen yourself in the meantime.";
 
     private static Dictionary<string, string> ReadTexts(JsonElement input)
     {
@@ -627,10 +661,13 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
         "Needs a Jev key and a program from the allowed list.",
         ToolInput.Schema(
             ("policy", "object", "The policy (kairo.policy/v0), as described above.", true),
+            ("background", "boolean", "Start it and return at once: it runs while you write the next policy (queue that with background=true too); PcRuns await collects the results. Default false.", false),
             ("window", "string", "Window id or program name. Default: the policy's program.", false)));
 
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
+        if (!ToolInput.OptionalBool(input, "background"))
+            session.EnsureIdle("PcRunPolicy");
         var policy = Parse(input);
         var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? policy.App);
         var goal = policy.Goal.ReplaceLineEndings(" ");
@@ -639,13 +676,23 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
 
     public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
-        using var banner = session.Begin();
+        var background = ToolInput.OptionalBool(input, "background");
+        using var banner = background ? null : session.Begin();
         var policy = Parse(input);
         var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? policy.App);
         if (session.DecisionModel() is not { } model)
             return ToolResult.Error("The fast decision model is not set up (no Jev key). Use PcObserve and PcAct to do it step by step.");
 
         await session.WarmAsync(model, ct).ConfigureAwait(false);
+        if (background)
+        {
+            var queued = session.Runs.Enqueue(policy.Goal, async runCt =>
+            {
+                var done = await new PolicyRunner(session.Desktop, session.Guard, model, session.Options).RunAsync(policy, window.Handle, runCt).ConfigureAwait(false);
+                return (done.Status == PursueStatus.Done, Describe(session, done));
+            }, ct);
+            return new ToolResult(PcPursueTool.Queued(session, queued, policy.Goal));
+        }
         var report = await new PolicyRunner(session.Desktop, session.Guard, model, session.Options).RunAsync(policy, window.Handle, ct).ConfigureAwait(false);
         return new ToolResult(Describe(session, report), IsError: report.Status == PursueStatus.Failed);
     }

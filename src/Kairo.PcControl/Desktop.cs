@@ -55,6 +55,7 @@ public sealed record Observation(int Version, WindowInfo Window, IReadOnlyList<U
     {
         var sb = new System.Text.StringBuilder();
         sb.Append("Window ").Append(Window.Id).Append(" · ").Append(Window.Process).Append(" · \"").Append(Window.Title).Append('"').Append('\n');
+        sb.Append(Overlays()).Append('\n');
         foreach (var e in Elements)
             sb.Append(Line(e)).Append('\n');
         if (Truncated)
@@ -142,6 +143,20 @@ public sealed record Observation(int Version, WindowInfo Window, IReadOnlyList<U
         return sb.Length == 0 ? null : sb.ToString(); // only numbering or indentation moved
     }
 
+    /// <summary>
+    /// What is open on top of the window: a menu that has dropped down, a dialog. A menu bar item named "Format" does not mean the Format
+    /// menu is open, and a list of elements shows absence badly (a classifier reading it takes the item for the menu), so it is said outright.
+    /// </summary>
+    public string Overlays()
+    {
+        var open = Elements
+            .Where(e => e.Role is "popup menu" or "dialog" && e.Depth == 0 || e.Role == "menu")
+            .Select(e => e.Name.Length > 0 ? $"{e.Role} \"{e.Name}\"" : e.Role)
+            .Distinct()
+            .ToList();
+        return open.Count == 0 ? "Open on top of the window: nothing (no menu is dropped down, no dialog is open)" : "Open on top of the window: " + string.Join(", ", open);
+    }
+
     public static string Line(UiElement e)
     {
         var sb = new System.Text.StringBuilder();
@@ -159,8 +174,8 @@ public sealed record Observation(int Version, WindowInfo Window, IReadOnlyList<U
         if (e.Expanded is { } x) state.Add(x ? "expanded" : "collapsed");
         if (state.Count > 0)
             sb.Append(" (").Append(string.Join(", ", state)).Append(')');
-        if (e.Value is { Length: > 0 })
-            sb.Append(" = \"").Append(e.Value).Append('"');
+        if (e.Value is not null)
+            sb.Append(" = \"").Append(e.Value).Append('"'); // an empty field says so: absence is hard to read in a list
         var can = new List<string>();
         foreach (var flag in Enum.GetValues<UiCapability>())
         {

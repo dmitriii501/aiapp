@@ -396,10 +396,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             ["next"] = new ChoiceQuestion(
                 "Which option is the best next step toward the sub-goal on the current screen?",
                 candidates.Select(c => new ChoiceOption(c.Key, c.Description)).ToList()),
-            ["achieved"] = new YesNoQuestion(
-                "The success criterion is already met on the current screen.",
-                WhenYes: "the screen shows the success criterion is met",
-                WhenNo: "the sub-goal is not achieved yet"),
+            ["achieved"] = StepQuestions.Achieved(),
         };
         if (semantic)
         {

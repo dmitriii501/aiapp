@@ -11,6 +11,12 @@ public static class StepQuestions
     public const string RiskId = "risk";
     public const string ProgressId = "progress";
 
+    /// <summary>The same question the fast loop asks every step and PcCheck asks on request.</summary>
+    public static YesNoQuestion Achieved() => new(
+        "The success criterion is already met on the current screen.",
+        WhenYes: "the screen shows the success criterion is met",
+        WhenNo: "the sub-goal is not achieved yet");
+
     /// <summary>The most direct step is one that cannot be taken back. Catches what the word list does not (publish, share, deploy, merge…).</summary>
     public static YesNoQuestion Risk() => new(
         "The step that moves most directly toward the sub-goal on this screen is hard to undo: it deletes, sends, publishes, shares, pays, " +

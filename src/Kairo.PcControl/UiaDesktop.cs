@@ -293,8 +293,8 @@ public sealed class UiaDesktop : IDesktop
         {
             readOnly = Flag(e, PropValueReadOnly);
             // A password is never read back: not into the model's view, not into logs.
-            if (!password && Prop(e, PropValue) is string text && text.Length > 0)
-                value = Collapse(text, 200);
+            if (!password && Prop(e, PropValue) is string text)
+                value = Collapse(text, 200); // "" for an empty field
         }
 
         bool? isChecked = can.HasFlag(UiCapability.Toggle) && Prop(e, PropToggleState) is int toggle ? toggle == 1 : null;
