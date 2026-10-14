@@ -407,6 +407,11 @@ public sealed class UiaDesktop : IDesktop
             Win32.Drag(x, y, x2, y2);
             return ActionOutcome.Success($"dragged from ({px}, {py}) to ({px2}, {py2})");
         }
+        if (action.Kind == DesktopActionKind.RightClickAt)
+        {
+            Win32.RightClick(x, y);
+            return ActionOutcome.Success($"right-clicked at ({px}, {py})");
+        }
         if (action.Kind == DesktopActionKind.DoubleClickAt)
             Win32.DoubleClick(x, y);
         else
@@ -433,7 +438,7 @@ public sealed class UiaDesktop : IDesktop
             ActionOutcome outcome;
             if (action.Kind == DesktopActionKind.Hotkey)
                 outcome = Hotkey(hwnd, action.Text ?? "");
-            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath)
+            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.RightClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath)
                 outcome = AtPoint(handle, hwnd, action);
             else if (action.Kind == DesktopActionKind.TypeFocused)
                 outcome = TypeFocused(hwnd, action.Text);

@@ -216,6 +216,8 @@ public enum DesktopActionKind
     /// <summary>A click at a point of a screenshot (<c>X</c>, <c>Y</c> in the picture's pixels). For what the tree does not show; needs a vision model.</summary>
     ClickAt,
     DoubleClickAt,
+    /// <summary>A right click at a point of a screenshot: opens a context menu (copy a picture, paste, properties).</summary>
+    RightClickAt,
     /// <summary>Presses at (<c>X</c>, <c>Y</c>) of a screenshot, moves to (<c>X2</c>, <c>Y2</c>) and lets go: a shape in a paint program, a selection, a slider.</summary>
     DragAt,
     /// <summary>Presses at the first of <c>Path</c>'s points of a screenshot, moves through all of them in order and lets go at the last: a whole figure or a curve in one stroke.</summary>
@@ -232,7 +234,7 @@ public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersio
     public override string ToString() => Kind switch
     {
         DesktopActionKind.Hotkey => $"hotkey {Text}",
-        DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt => $"{Kind} ({X}, {Y}) in screenshot {ObservationVersion}",
+        DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.RightClickAt => $"{Kind} ({X}, {Y}) in screenshot {ObservationVersion}",
         DesktopActionKind.DragPath => $"DragPath through {Path?.Count ?? 0} points in screenshot {ObservationVersion}",
         DesktopActionKind.DragAt => $"DragAt ({X}, {Y}) to ({X2}, {Y2}) in screenshot {ObservationVersion}",
         DesktopActionKind.TypeFocused => $"type into the focused element \"{Text}\"",

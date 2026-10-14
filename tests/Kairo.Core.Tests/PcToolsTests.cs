@@ -57,7 +57,7 @@ public sealed class PcToolsTests
         Assert.Empty(PcTools.For(new KairoConfig(), () => null, _desktop));
         Assert.Empty(PcTools.For(Config("[pc]\nenabled = true"), () => null, _desktop));
         Assert.Empty(PcTools.For(Config("[pc]\napps = [\"notepad.exe\"]"), () => null, _desktop));
-        Assert.Equal(["PcWindows", "PcLaunch", "PcObserve", "PcAct", "PcPursue", "PcRunPolicy", "PcCheck", "PcRuns"], Tools().Select(t => t.Spec.Name));
+        Assert.Equal(["PcWindows", "PcLaunch", "PcObserve", "PcAct", "PcBatch", "PcClipboard", "PcPursue", "PcRunPolicy", "PcCheck", "PcRuns"], Tools().Select(t => t.Spec.Name));
     }
 
     [Fact]

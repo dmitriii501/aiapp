@@ -36,7 +36,7 @@ public static class PcTools
 
     /// <summary>The tools, or none when PC control is off or no application was listed.</summary>
     /// <param name="overlay">The on-screen banner; by default the real one when the real desktop is used (and <c>[pc] overlay</c> is not off).</param>
-    public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null, ControlOverlay? overlay = null, IDecisionLog? log = null)
+    public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null, ControlOverlay? overlay = null, IDecisionLog? log = null, IClipboard? clipboard = null)
     {
         if (config.PcEnabled != true || (config.PcApps.Count == 0 && config.PcAllApps != true))
             return [];
@@ -61,8 +61,9 @@ public static class PcTools
             OptionsFor(config, log ?? (desktop is null ? SharedHistory(config) : null)),
             overlay ?? (desktop is null && config.PcOverlay != false ? ControlOverlay.Shared : null),
             vision: config.PcVision == true,
-            autonomous: config.PcAutonomous == true);
-        var tools = new List<ITool> { new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session), new PcCheckTool(session), new PcRunsTool(session) };
+            autonomous: config.PcAutonomous == true,
+            clipboard: clipboard);
+        var tools = new List<ITool> { new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcBatchTool(session), new PcClipboardTool(session), new PcPursueTool(session), new PcRunPolicyTool(session), new PcCheckTool(session), new PcRunsTool(session) };
         // Pictures only when the user said the model can read them: otherwise the tool would only waste tokens.
         if (config.PcVision == true)
             tools.Insert(3, new PcScreenshotTool(session));
@@ -70,8 +71,11 @@ public static class PcTools
     }
 }
 
-internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionModel?> decisionModel, PursueOptions options, ControlOverlay? overlay = null, bool vision = false, bool autonomous = false)
+internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionModel?> decisionModel, PursueOptions options, ControlOverlay? overlay = null, bool vision = false, bool autonomous = false, IClipboard? clipboard = null)
 {
+    /// <summary>The clipboard PcClipboard uses (the real one unless a test brings its own).</summary>
+    public IClipboard Clipboard { get; } = clipboard ?? new SystemClipboard();
+
     /// <summary>The user said the model can read pictures: screenshots and pixel actions are on.</summary>
     public bool Vision { get; } = vision;
 
@@ -446,10 +450,10 @@ internal sealed class PcActTool(PcSession session) : ITool
         ["type_text"] = DesktopActionKind.TypeText, ["toggle"] = DesktopActionKind.Toggle, ["expand"] = DesktopActionKind.Expand,
         ["collapse"] = DesktopActionKind.Collapse, ["select"] = DesktopActionKind.Select, ["scroll_down"] = DesktopActionKind.ScrollDown,
         ["scroll_up"] = DesktopActionKind.ScrollUp, ["focus"] = DesktopActionKind.Focus, ["hotkey"] = DesktopActionKind.Hotkey,
-        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["drag_at"] = DesktopActionKind.DragAt, ["drag_path"] = DesktopActionKind.DragPath, ["type_focused"] = DesktopActionKind.TypeFocused,
+        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["right_click_at"] = DesktopActionKind.RightClickAt, ["drag_at"] = DesktopActionKind.DragAt, ["drag_path"] = DesktopActionKind.DragPath, ["type_focused"] = DesktopActionKind.TypeFocused,
     };
 
-    private static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath or DesktopActionKind.TypeFocused;
+    internal static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.RightClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath or DesktopActionKind.TypeFocused;
 
     public ToolSpec Spec { get; } = new(
         "PcAct",
@@ -458,13 +462,15 @@ internal sealed class PcActTool(PcSession session) : ITool
         "or hotkey (ctrl+s, alt+tab…). element is an id from a PcObserve/PcAct result: an element keeps its id from look to look while it stays where it is, so several actions in a row need no look in between; the id of an element that went is refused. type_text without element types into whatever has the keyboard focus (click or focus the field first). " +
         "If the window looks the same right after the action (a page that is loading), the tool waits for it to change before it returns; " +
         "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. A click_at waits the same way " +
-        "(until the picture or the element list changes) and then returns the new picture, so a page that opens after the click is what you see. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
-        "look = its number), drag_at (press at x, y, move to x2, y2, let go: draw a line, select, move a slider), drag_path (one stroke through many points, points = 'x,y x,y x,y …': a whole figure or curve in one call, one undo step) and type_focused (text into whatever has the focus) work where the tree shows nothing. " +
+        "(until the picture or the element list changes) and then returns the new picture, so a page that opens after the click is what you see. Password fields cannot be filled. With vision on, click_at / double_click_at / right_click_at (x, y in the pixels of a PcScreenshot, " +
+        "look = its number; right_click_at opens the context menu, e.g. 'Copy image' in a browser), drag_at (press at x, y, move to x2, y2, let go: draw a line, select, move a slider), drag_path (one stroke: points = 'x,y x,y x,y …' with smooth=true for a curve, or shape=ellipse / rectangle with the box x, y, x2, y2: a whole figure in one call, one undo step) and type_focused (text into whatever has the focus) work where the tree shows nothing. " +
         "In a drawing program the active tool decides what a drag does (a selection tool only selects): check the tool in the element list or the picture before drawing, and look at the picture after the first stroke before you repeat it.",
         ToolInput.Schema(
-            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at, drag_at, drag_path or type_focused.", true),
-            ("x", "integer", "For click_at / double_click_at: x in the screenshot's pixels.", false),
-            ("y", "integer", "For click_at / double_click_at: y in the screenshot's pixels.", false),
+            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at, right_click_at, drag_at, drag_path or type_focused. Several actions in a row: PcBatch.", true),
+            ("x", "integer", "For click_at / double_click_at / right_click_at: x in the screenshot's pixels.", false),
+            ("y", "integer", "For click_at / double_click_at / right_click_at: y in the screenshot's pixels.", false),
+            ("shape", "string", "For drag_path instead of points: ellipse or rectangle inside the box x, y, x2, y2 (screenshot pixels).", false),
+            ("smooth", "boolean", "For drag_path with points: draw a smooth curve through them instead of straight segments (the same first and last point closes it).", false),
             ("points", "string", "For drag_path: the points of one stroke in the screenshot's pixels, \"x,y x,y x,y\" (2 to 300 points, in order; the button is held from the first to the last).", false),
             ("x2", "integer", "For drag_at: where the drag ends, x in the screenshot's pixels.", false),
             ("y2", "integer", "For drag_at: where the drag ends, y in the screenshot's pixels.", false),
@@ -492,11 +498,16 @@ internal sealed class PcActTool(PcSession session) : ITool
         var outcome = session.Desktop.Perform(window.Handle, action);
         if (!outcome.Ok)
             return Task.FromResult(ToolResult.Error($"Not done: {outcome.Message}. Look again with PcObserve."));
-        var head = $"{action}: {outcome.Message}.\n\n";
+        return Task.FromResult(Finish(window, action, $"{action}: {outcome.Message}.\n\n", ToolInput.OptionalNumber(input, "wait")));
+    }
+
+    /// <summary>What the model sees after an action went through: the new picture for a pixel action, else the new look (only what changed, in a big window).</summary>
+    internal ToolResult Finish(WindowInfo window, DesktopAction action, string head, double? waitSeconds)
+    {
         // After a pixel action the picture is what shows the effect (the tree may show nothing): hand it back in the same call.
         if (IsPixel(action.Kind) && session.Vision)
         {
-            var pixelWait = ToolInput.OptionalNumber(input, "wait") is { } pixelSeconds
+            var pixelWait = waitSeconds is { } pixelSeconds
                 ? (int)(Math.Clamp(pixelSeconds, 0, 10) * 1000)
                 : action.Kind == DesktopActionKind.TypeFocused ? 300 : 1000;
             Snapshot after;
@@ -508,13 +519,13 @@ internal sealed class PcActTool(PcSession session) : ITool
             }
             catch (InvalidOperationException ex)
             {
-                return Task.FromResult(WindowGone(head, ex));
+                return WindowGone(head, ex);
             }
             var note = pictureChanged ? "" : $" The picture looks the same as before the action, even after waiting {pixelWaited} ms: it may have had no effect, or the page is still loading (use wait).";
             var shot = PcScreenshotTool.Take(session, window, head, after, note);
-            return Task.FromResult(shot.IsError ? shot : shot with { Content = shot.Content + "\n\n" + session.Screen(window.Handle, out _) });
+            return shot.IsError ? shot : shot with { Content = shot.Content + "\n\n" + session.Screen(window.Handle, out _) };
         }
-        var wait = ToolInput.OptionalNumber(input, "wait") is { } seconds
+        var wait = waitSeconds is { } seconds
             ? (int)(Math.Clamp(seconds, 0, 10) * 1000)
             : action.Kind is DesktopActionKind.Hotkey or DesktopActionKind.Invoke ? 400 : 150;
         Observation look;
@@ -525,23 +536,23 @@ internal sealed class PcActTool(PcSession session) : ITool
         }
         catch (InvalidOperationException ex)
         {
-            return Task.FromResult(WindowGone(head, ex));
+            return WindowGone(head, ex);
         }
-        return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _, taken: look, waitedMs: waited, allowChangesOnly: true)));
+        return new ToolResult(head + session.Screen(window.Handle, out _, taken: look, waitedMs: waited, allowChangesOnly: true));
     }
 
     /// <summary>The action went through and then the window was no longer there: closing a window or quitting a program is this, not a failure.</summary>
-    private static ToolResult WindowGone(string head, InvalidOperationException ex) =>
+    internal static ToolResult WindowGone(string head, InvalidOperationException ex) =>
         ex.Message.Contains("gone", StringComparison.OrdinalIgnoreCase)
             ? new ToolResult(head + "The window is gone now: the action closed it (or the program quit). Nothing more to look at; PcWindows lists what is open.")
             : ToolResult.Error(ex.Message);
 
-    private (WindowInfo Window, DesktopAction Action, string Verb) Parse(JsonElement input)
+    internal (WindowInfo Window, DesktopAction Action, string Verb) Parse(JsonElement input, string? defaultWindow = null)
     {
         var verb = ToolInput.RequiredString(input, "action").Trim();
         if (!Kinds.TryGetValue(verb, out var kind) || IsPixel(kind) && !session.Vision)
             throw new ToolInputException($"Unknown action '{verb}'. Use {string.Join(", ", Kinds.Where(k => session.Vision || !IsPixel(k.Value)).Select(k => k.Key))}.");
-        var window = session.Resolve(ToolInput.OptionalString(input, "window"));
+        var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? defaultWindow);
         var text = ToolInput.OptionalString(input, "text");
         var element = ToolInput.OptionalString(input, "element")?.Trim();
 
@@ -555,15 +566,33 @@ internal sealed class PcActTool(PcSession session) : ITool
         if (kind == DesktopActionKind.DragPath)
         {
             var look = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number of the PcScreenshot the points come from.");
-            var numbers = System.Text.RegularExpressions.Regex.Matches(ToolInput.OptionalString(input, "points") ?? "", "-?[0-9]+").Select(m => int.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture)).ToList();
-            if (numbers.Count < 4 || numbers.Count % 2 != 0)
-                throw new ToolInputException("drag_path needs points: pairs of x,y such as \"100,200 150,260 220,300\" (at least two points).");
-            if (numbers.Count > 600)
-                throw new ToolInputException("drag_path takes at most 300 points; use fewer or split the figure into several strokes.");
-            var path = Enumerable.Range(0, numbers.Count / 2).Select(i => (numbers[2 * i], numbers[2 * i + 1])).ToList();
+            List<(int X, int Y)> path;
+            var shape = ToolInput.OptionalString(input, "shape")?.Trim().ToLowerInvariant();
+            if (!string.IsNullOrEmpty(shape))
+            {
+                if (shape is not ("ellipse" or "rectangle"))
+                    throw new ToolInputException($"Unknown shape '{shape}': use ellipse or rectangle, or give points.");
+                if (ToolInput.OptionalInt(input, "x") is not { } bx1 || ToolInput.OptionalInt(input, "y") is not { } by1
+                    || ToolInput.OptionalInt(input, "x2") is not { } bx2 || ToolInput.OptionalInt(input, "y2") is not { } by2)
+                    throw new ToolInputException($"shape {shape} needs x, y, x2 and y2: the box that holds the figure, in screenshot pixels.");
+                path = shape == "ellipse" ? Strokes.Ellipse(bx1, by1, bx2, by2) : Strokes.Rectangle(bx1, by1, bx2, by2);
+            }
+            else
+            {
+                var numbers = System.Text.RegularExpressions.Regex.Matches(ToolInput.OptionalString(input, "points") ?? "", "-?[0-9]+").Select(m => int.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+                if (numbers.Count < 4 || numbers.Count % 2 != 0)
+                    throw new ToolInputException("drag_path needs points: pairs of x,y such as \"100,200 150,260 220,300\" (at least two points), or a shape with x, y, x2, y2.");
+                if (numbers.Count > 600)
+                    throw new ToolInputException("drag_path takes at most 300 points; use fewer or split the figure into several strokes.");
+                path = [.. Enumerable.Range(0, numbers.Count / 2).Select(i => (numbers[2 * i], numbers[2 * i + 1]))];
+                if (ToolInput.OptionalBool(input, "smooth"))
+                    path = Strokes.Smooth(path);
+            }
+            if (path.Count > Strokes.MaxPoints)
+                throw new ToolInputException($"The stroke has {path.Count} points; the most is {Strokes.MaxPoints}.");
             return (window, new DesktopAction(kind, look, null, null, path[0].Item1, path[0].Item2, path[^1].Item1, path[^1].Item2, path), verb);
         }
-        if (kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt)
+        if (kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.RightClickAt or DesktopActionKind.DragAt)
         {
             var shot = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number of the PcScreenshot the point comes from.");
             if (ToolInput.OptionalInt(input, "x") is not { } x || ToolInput.OptionalInt(input, "y") is not { } y)

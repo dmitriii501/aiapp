@@ -161,6 +161,14 @@ internal static unsafe partial class Win32
         return ProcessOf(root == 0 ? window : root);
     }
 
+    /// <summary>A right click: the context menu of whatever is under the point.</summary>
+    public static void RightClick(int x, int y)
+    {
+        SetCursorPos(x, y);
+        mouse_event(0x8, 0, 0, 0, 0); // right down
+        mouse_event(0x10, 0, 0, 0, 0); // right up
+    }
+
     public static void DoubleClick(int x, int y)
     {
         Click(x, y);

@@ -5,7 +5,7 @@ namespace Kairo.Core.Tools;
 /// make one without any rights), and file tools run outside the sandbox with the user's rights: "is this path inside the project" has to
 /// be asked of the real path, not of the text.
 /// </summary>
-internal static class RealPath
+public static class RealPath
 {
     private const int MaxLinks = 8;
 
