@@ -135,6 +135,36 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
     /// <summary>Above this many elements a result after an action lists what changed instead of the whole window.</summary>
     public const int DiffAbove = 80;
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, ulong> _lastShot = new();
+
+    /// <summary>Remembers what the latest screenshot of the window looked like, to tell later whether a click changed it.</summary>
+    public void NoteShot(long handle, Snapshot shot) => _lastShot[handle] = System.IO.Hashing.XxHash3.HashToUInt64(shot.Picture.Png);
+
+    /// <summary>
+    /// A screenshot after a click or typing by pixels. A page or an app answers after the click returns, so the picture is taken again
+    /// (every 150 ms, up to <paramref name="waitMs"/>) until it, or the window's element list, differs from what was seen before.
+    /// </summary>
+    public Snapshot ShotAfterAction(long handle, int waitMs, out int waitedMs, out bool changed)
+    {
+        var beforePicture = _lastShot.GetValueOrDefault(handle);
+        var beforeTree = _lastDigest.GetValueOrDefault(handle);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Snapshot shot;
+        while (true)
+        {
+            shot = Desktop.Capture(handle);
+            var picture = System.IO.Hashing.XxHash3.HashToUInt64(shot.Picture.Png);
+            changed = beforePicture == 0 || picture != beforePicture
+                      || beforeTree is not null && Desktop.Observe(handle).Digest != beforeTree;
+            if (changed || clock.ElapsedMilliseconds >= waitMs || Desktop.StopRequested())
+                break;
+            Thread.Sleep(150);
+        }
+        waitedMs = (int)clock.ElapsedMilliseconds;
+        NoteShot(handle, shot);
+        return shot;
+    }
+
     /// <summary>The screen as the model is handed it after a fast run; it counts as shown, so later results are relative to it.</summary>
     public string ShownText(Observation look)
     {
@@ -335,21 +365,23 @@ internal sealed class PcScreenshotTool(PcSession session) : ITool
         return Task.FromResult(Take(session, window));
     }
 
-    internal static ToolResult Take(PcSession session, WindowInfo window, string? prefix = null)
+    internal static ToolResult Take(PcSession session, WindowInfo window, string? prefix = null, Snapshot? taken = null, string? note = null)
     {
         Snapshot shot;
         try
         {
-            shot = session.Desktop.Capture(window.Handle);
+            shot = taken ?? session.Desktop.Capture(window.Handle);
         }
         catch (InvalidOperationException ex)
         {
             return ToolResult.Error(ex.Message);
         }
+        if (taken is null)
+            session.NoteShot(window.Handle, shot);
         var p = shot.Picture;
         var text = $"{prefix}Screenshot {shot.Id} of {window.Id} ({window.Process}, \"{window.Title}\"): {p.Width}x{p.Height} px" +
                    (p.Scale < 1 ? $", the window shrunk to {p.Scale.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} of its size" : "") +
-                   $". For PcAct click_at / double_click_at use look={shot.Id} and x, y in this picture's pixels, origin at the top-left.";
+                   $". For PcAct click_at / double_click_at use look={shot.Id} and x, y in this picture's pixels, origin at the top-left." + note;
         return new ToolResult(text, Images: [new ToolImage("image/png", Convert.ToBase64String(p.Png))]);
     }
 }
@@ -373,7 +405,8 @@ internal sealed class PcActTool(PcSession session) : ITool
         "(replace the text of an edit), type_text (type into an element), toggle, expand, collapse, select, scroll_down, scroll_up, focus, " +
         "or hotkey (ctrl+s, alt+tab…). element is an id from a PcObserve/PcAct result: an element keeps its id from look to look while it stays where it is, so several actions in a row need no look in between; the id of an element that went is refused. type_text without element types into whatever has the keyboard focus (click or focus the field first). " +
         "If the window looks the same right after the action (a page that is loading), the tool waits for it to change before it returns; " +
-        "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
+        "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. A click_at waits the same way " +
+        "(until the picture or the element list changes) and then returns the new picture, so a page that opens after the click is what you see. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
         "look = its number) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
         ToolInput.Schema(
             ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at or type_focused.", true),
@@ -382,7 +415,7 @@ internal sealed class PcActTool(PcSession session) : ITool
             ("element", "string", "Element id such as e12 (not for hotkey).", false),
             ("look", "integer", "For click_at / double_click_at: the screenshot's number. Not needed for element ids.", false),
             ("text", "string", "The text for set_value and type_text, or the key combination for hotkey.", false),
-            ("wait", "number", "Seconds to wait for the window to change after the action (0–10). Default 0.4 for hotkey and invoke, else 0.15.", false),
+            ("wait", "number", "Seconds to wait for the window to change after the action (0–10). Default 0.4 for hotkey and invoke, 1 for click_at, else 0.15.", false),
             ("window", "string", "Window id or program name. Default: the allowed window in front.", false)));
 
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
@@ -406,7 +439,22 @@ internal sealed class PcActTool(PcSession session) : ITool
         // After a pixel action the picture is what shows the effect (the tree may show nothing): hand it back in the same call.
         if (IsPixel(action.Kind) && session.Vision)
         {
-            var shot = PcScreenshotTool.Take(session, window, head);
+            var pixelWait = ToolInput.OptionalNumber(input, "wait") is { } pixelSeconds
+                ? (int)(Math.Clamp(pixelSeconds, 0, 10) * 1000)
+                : action.Kind == DesktopActionKind.TypeFocused ? 300 : 1000;
+            Snapshot after;
+            int pixelWaited;
+            bool pictureChanged;
+            try
+            {
+                after = session.ShotAfterAction(window.Handle, pixelWait, out pixelWaited, out pictureChanged);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Task.FromResult(ToolResult.Error(ex.Message));
+            }
+            var note = pictureChanged ? "" : $" The picture looks the same as before the action, even after waiting {pixelWaited} ms: it may have had no effect, or the page is still loading (use wait).";
+            var shot = PcScreenshotTool.Take(session, window, head, after, note);
             return Task.FromResult(shot.IsError ? shot : shot with { Content = shot.Content + "\n\n" + session.Screen(window.Handle, out _) });
         }
         var wait = ToolInput.OptionalNumber(input, "wait") is { } seconds

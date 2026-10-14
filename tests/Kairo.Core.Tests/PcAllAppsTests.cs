@@ -73,6 +73,36 @@ public sealed class PcAllAppsTests
         Assert.NotNull(launch.Assess(Json(new { application = "notepad.exe" }), new ToolContext(Path.GetTempPath())));
     }
 
+    private static string MakeLink(string dir, string name, string target)
+    {
+        var path = Path.Combine(dir, name + ".lnk");
+        var shellType = Type.GetTypeFromProgID("WScript.Shell")!;
+        var shell = Activator.CreateInstance(shellType)!;
+        var link = shellType.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, [path])!;
+        link.GetType().InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, link, [target]);
+        link.GetType().InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, link, null);
+        return path;
+    }
+
+    [Fact]
+    public void A_program_found_only_through_a_start_menu_shortcut_can_be_started_if_it_is_a_windowed_one()
+    {
+        var menu = Directory.CreateTempSubdirectory("kairo-menu-").FullName;
+        Directory.CreateDirectory(Path.Combine(menu, "Steam"));
+        var notepad = Path.Combine(Environment.SystemDirectory, "notepad.exe");
+        if (!File.Exists(notepad))
+            return;
+        MakeLink(Path.Combine(menu, "Steam"), "Zzz Fake Game", notepad);
+        MakeLink(menu, "Zzz Console Thing", Path.Combine(Environment.SystemDirectory, "cmd.exe"));
+
+        Assert.Equal(notepad, LaunchCheck.Resolve("zzz fake game.exe", [menu]), ignoreCase: true);
+        Assert.Null(LaunchCheck.Refusal("zzz fake game.exe", [menu]));
+        Assert.Contains("console program", LaunchCheck.Refusal("zzz console thing.exe", [menu]));
+        Assert.Contains("not a program Kairo can find", LaunchCheck.Refusal("zzz no such program.exe", [menu]));
+        // A shortcut can also be found by what it points at.
+        Assert.Equal(notepad, LaunchCheck.Resolve("notepad.exe", [menu]), ignoreCase: true);
+    }
+
     [Fact]
     public void The_real_check_refuses_console_programs_and_unknown_names_and_accepts_a_windowed_one()
     {

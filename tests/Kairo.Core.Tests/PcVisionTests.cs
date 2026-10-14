@@ -102,6 +102,25 @@ public sealed class PcVisionTests
         Assert.Null(result.Images);
     }
 
+    [Fact]
+    public async Task A_click_that_changes_nothing_says_so_after_waiting_and_a_click_that_does_returns_at_once()
+    {
+        _desktop.StaticPicture = true;
+        var tools = Tools(true);
+        await Tool(tools, "PcScreenshot").InvokeAsync(Json(new { }), Ctx, default);
+
+        var nothing = await Tool(tools, "PcAct").InvokeAsync(Json(new { action = "click_at", x = 5, y = 5, look = 1, wait = 0.4 }), Ctx, default);
+
+        Assert.Contains("looks the same as before", nothing.Content);
+
+        _desktop.StaticPicture = false;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var something = await Tool(tools, "PcAct").InvokeAsync(Json(new { action = "click_at", x = 5, y = 5, look = 3, wait = 10 }), Ctx, default);
+
+        Assert.True(clock.ElapsedMilliseconds < 2000);
+        Assert.DoesNotContain("looks the same as before", something.Content);
+    }
+
     [Theory]
     [InlineData("{\"action\":\"click_at\",\"x\":1,\"y\":1}", "look is required")]
     [InlineData("{\"action\":\"click_at\",\"look\":1,\"y\":1}", "needs x and y")]

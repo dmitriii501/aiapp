@@ -54,7 +54,11 @@ internal sealed class FakeDesktop : IDesktop
     private int _shotId;
     public int Captures => _shotId;
 
-    public Snapshot Capture(long handle) => new(++_shotId, new Screenshot([137, 80, 78, 71, 13, 10, 26, 10], 200, 100, 0.5, 10, 20));
+    /// <summary>The picture never changes (a click that did nothing).</summary>
+    public bool StaticPicture { get; set; }
+
+    // The picture differs after every action, as a real screen does when something happened.
+    public Snapshot Capture(long handle) => new(++_shotId, new Screenshot([137, 80, 78, 71, 13, 10, 26, (byte)(10 + (StaticPicture ? 0 : Performed.Count))], 200, 100, 0.5, 10, 20));
 
     public bool StopRequested() => Stop;
 

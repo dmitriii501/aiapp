@@ -101,7 +101,9 @@ public sealed class UiaDesktop : IDesktop
     {
         var name = PcGuard.Normalize(application);
         var before = Windows().Where(w => w.Process == name).Select(w => w.Handle).ToHashSet();
-        Process.Start(new ProcessStartInfo(application) { UseShellExecute = true });
+        // A program that is only to be found through a Start Menu shortcut cannot be started by its bare name: start what Windows would.
+        var target = LaunchCheck.Resolve(name) ?? application;
+        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
 
         var deadline = Stopwatch.StartNew();
         while (deadline.Elapsed < wait)
