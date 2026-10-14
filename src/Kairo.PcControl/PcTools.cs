@@ -309,7 +309,28 @@ internal sealed class PcWindowsTool(PcSession session) : ITool
             sb.Append("Every program may be controlled except terminals, password managers, system tools, code editors and Kairo itself (those are not shown).");
         else
             sb.Append("Allowed programs: ").Append(string.Join(", ", session.Guard.Allowed.Order())).Append(". Windows of other programs are not shown and cannot be controlled.");
+        sb.Append('\n').Append(KnownFolders());
         return Task.FromResult(new ToolResult(sb.ToString()));
+    }
+
+    /// <summary>
+    /// Where the user's folders really are. A desktop that OneDrive moved is not under the profile, and a file dialog opens in Documents:
+    /// without these paths a model saves "to the desktop" into the wrong place.
+    /// </summary>
+    internal static string KnownFolders()
+    {
+        var folders = new List<string>();
+        void Add(string name, string path)
+        {
+            if (!string.IsNullOrEmpty(path))
+                folders.Add($"{name}={path}");
+        }
+        Add("Desktop", Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+        Add("Documents", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        if (Directory.Exists(downloads))
+            Add("Downloads", downloads);
+        return "Folders (type these full paths into file dialogs; a dialog opens in its own default folder, not on the desktop): " + string.Join("; ", folders);
     }
 }
 

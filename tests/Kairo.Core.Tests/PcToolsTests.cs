@@ -42,6 +42,16 @@ public sealed class PcToolsTests
     }
 
     [Fact]
+    public async Task The_window_list_names_the_real_desktop_and_documents_folders()
+    {
+        var result = await Tool("PcWindows").InvokeAsync(Json(new { }), Ctx, default);
+
+        Assert.Contains("Desktop=" + Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), result.Content);
+        Assert.Contains("Documents=" + Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), result.Content);
+        Assert.Contains("file dialogs", result.Content);
+    }
+
+    [Fact]
     public void Nothing_is_offered_unless_the_user_turned_it_on_and_listed_programs()
     {
         Assert.Empty(PcTools.For(new KairoConfig(), () => null, _desktop));
