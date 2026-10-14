@@ -267,6 +267,10 @@ public class HostTests : IDisposable
         Assert.True(config.PcEnabled);
         Assert.Equal(["calc.exe"], config.PcApps);
         Assert.False(_settings.Update(new SettingsUpdate(PcEnabled: false)).PcEnabled);
+        Assert.False(before.PcVision);
+        Assert.True(_settings.Update(new SettingsUpdate(PcVision: true)).PcVision);
+        Assert.True(_settings.LoadUser().PcVision);
+        Assert.False(_settings.Update(new SettingsUpdate(PcVision: false)).PcVision);
     }
 
     [Fact]

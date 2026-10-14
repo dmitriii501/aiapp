@@ -40,6 +40,7 @@ export function SettingsDialog() {
   const [sandboxShell, setSandboxShell] = useState<SandboxShell>(settings?.sandboxShell ?? "off");
   const [sandboxNetwork, setSandboxNetwork] = useState(settings?.sandboxNetwork ?? false);
   const [pcEnabled, setPcEnabled] = useState(settings?.pcEnabled ?? false);
+  const [pcVision, setPcVision] = useState(settings?.pcVision ?? false);
   const [openApps, setOpenApps] = useState<PcApp[] | null>(null);
   const [pickedApp, setPickedApp] = useState("");
   const [saving, setSaving] = useState(false);
@@ -71,7 +72,7 @@ export function SettingsDialog() {
     e.preventDefault();
     setSaving(true);
     const ok = await saveSettings(
-      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork, pcEnabled },
+      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork, pcEnabled, pcVision },
       key.trim() ? { provider, key: key.trim() } : undefined,
     );
     const searchOk = ok && (braveKey.trim() ? await saveSettings({}, { provider: "brave", key: braveKey.trim() }) : true);
@@ -210,6 +211,10 @@ export function SettingsDialog() {
           <label className="check">
             <input type="checkbox" checked={pcEnabled} onChange={(e) => setPcEnabled(e.target.checked)} />
             <span>Разрешить Kairo управлять программами из списка</span>
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={pcVision} onChange={(e) => setPcVision(e.target.checked)} />
+            <span>Разрешить скриншоты и клики по координатам (нужна модель, читающая изображения)</span>
           </label>
           <Field
             label="Программы, которыми можно управлять"

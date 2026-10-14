@@ -100,6 +100,8 @@ export interface Settings {
   /** Kairo may control programs from pcApps. Turned on by the user in this dialog or in config.toml; a repository cannot turn it on. */
   pcEnabled?: boolean;
   pcApps?: string[];
+  /** Screenshots and clicks by coordinates are on: the model must be able to read images. */
+  pcVision?: boolean;
 }
 
 export interface PcApp {
@@ -118,6 +120,7 @@ export interface SettingsUpdate {
   sandboxShell?: SandboxShell;
   sandboxNetwork?: boolean;
   pcEnabled?: boolean;
+  pcVision?: boolean;
 }
 
 export interface Workspace {
