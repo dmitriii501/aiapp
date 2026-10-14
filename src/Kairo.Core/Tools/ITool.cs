@@ -93,10 +93,15 @@ public sealed class ToolContext(string workingDirectory)
     public string ResolvePath(string path) =>
         Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(WorkingDirectory, path));
 
-    public bool IsInsideWorkspace(string fullPath)
+    /// <summary>Whether the path leads into the working folder. Links (junctions, symlinks) are followed first: one inside the folder may lead out of it.</summary>
+    public bool IsInsideWorkspace(string fullPath) => IsUnder(RealPath.Of(fullPath), RealPath.Of(WorkingDirectory));
+
+    private static bool IsUnder(string realPath, string realRoot)
     {
-        var root = WorkingDirectory.EndsWith(Path.DirectorySeparatorChar) ? WorkingDirectory : WorkingDirectory + Path.DirectorySeparatorChar;
-        return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) || string.Equals(fullPath, WorkingDirectory, StringComparison.OrdinalIgnoreCase);
+        var root = realRoot.TrimEnd(Path.DirectorySeparatorChar);
+        var path = realPath.TrimEnd(Path.DirectorySeparatorChar);
+        return string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
+               || path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -107,10 +112,10 @@ public sealed class ToolContext(string workingDirectory)
     {
         if (Sandbox is null)
             return null;
+        var real = RealPath.Of(fullPath);
         foreach (var root in Sandbox.WritablePaths)
         {
-            var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
-            if (fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase))
+            if (IsUnder(real, RealPath.Of(root)))
                 return null;
         }
         return $"{fullPath} is outside the folders this session may change ({string.Join(", ", Sandbox.WritablePaths.Take(3))}). Work inside them.";

@@ -22,25 +22,29 @@ flowchart TB
 
     subgraph Engine["Ядро"]
         Core["Kairo.Core: agent loop, контекст, разрешения, хуки, сессии"]
-        Swarm["Kairo.Swarm: оркестратор, доска задач, сообщения"]
+        Swarm["Kairo.Swarm: оркестратор, доска задач, сообщения, worktree"]
         Tools["Kairo.Tools: встроенные инструменты"]
-        Prov["Kairo.Providers: адаптеры моделей"]
+        Prov["Kairo.Providers: адаптеры моделей, Jev"]
         Mcp["Kairo.Mcp: MCP-клиент"]
+        PcCtl["Kairo.PcControl: окна, UI Automation, быстрый цикл, политики"]
     end
 
     subgraph Win["Kairo.Windows"]
         PTY["ConPTY и Job Objects"]
-        PC["Окна, UI Automation, ввод, захват экрана"]
         Sand["Песочница AppContainer"]
         Cred["Credential Manager"]
     end
 
-    WV <--> Proto <--> Core
+    Host["Kairo.Host: сессии, роли, настройки"]
+
+    WV <--> Proto <--> Host --> Core
     CLI --> Core
     Swarm --> Core
-    Core --> Tools & Prov & Mcp
-    Tools --> PTY & PC
-    PTY --> Sand
+    Core --> Tools & Prov & Mcp & PcCtl
+    Tools --> PTY
+    Tools --> Sand
+    Swarm --> Sand
+    PcCtl --> Prov
     Prov --> Cred
     Prov --> LLM[("LLM API / Ollama")]
     Mcp --> MCPs[("MCP-серверы")]
@@ -62,9 +66,9 @@ flowchart TB
 | `Kairo.Providers` | Адаптеры моделей, профили возможностей, лимиты запросов | Core |
 | `Kairo.Mcp` | MCP-клиент, OAuth | Core |
 | `Kairo.Tools` | Read, Write, Edit, Glob, Grep, Shell, WebFetch… | Core, Windows |
-| `Kairo.Swarm` | Рой: лид и воркеры в git worktrees, доска задач, сообщения, бюджеты, пауза и продолжение (CLI `kairo swarm`; интерфейса пока нет) | Core, Tools |
-| `Kairo.Policy` | Политики решений: схема, валидация, рантайм (рефлексы → System 1 → эскалация), экстракторы восприятия | Core, Providers, Windows |
-| `Kairo.Windows` | Всё про Win32 / WinRT / COM; сейчас — хранилище ключей в Credential Manager | Core |
+| `Kairo.Swarm` | Рой: лид и воркеры в git worktrees, доска задач, сообщения, бюджеты, пауза и продолжение (CLI `kairo swarm` и раздел «Рой» в приложении); git по проверенному каталогу worktree, инструмент `Git` только для чтения | Core, Tools |
+| `Kairo.PcControl` | Управление ПК: окна и UI Automation (`UiaDesktop`, не AOT), `PcGuard`, быстрый цикл `PursueLoop`, политики и рефлексы, фоновая очередь запусков, журнал решений, инструменты `Pc*`, красная плашка | Core, Providers |
+| `Kairo.Windows` | Всё про Win32 / COM: хранилище ключей Credential Manager, ConPTY, песочница AppContainer | Core |
 | `Kairo.Host` | Хост агентов для любого UI: сессии, фоновые ходы, события протокола, ожидание разрешений, настройки, выбор провайдера. Сейчас живёт в процессе десктопа, позже — фоновый процесс | Core, Providers, Tools |
 | `Kairo.Cli` | `kairo.exe` | Host, Windows |
 | `Kairo.Desktop` | Оболочка WinUI 3 + хост WebView2 + нативный выбор папки | Host, Windows |
@@ -149,20 +153,37 @@ public interface ITool
 
 Рой — долгоживущие параллельные агенты с ролями, общей доской задач, сообщениями и изолированными рабочими пространствами (git worktree). Каждый агент роя — обычный экземпляр agent loop из `Kairo.Core`. Подробно — в [спецификации роя](specs/swarm.md).
 
+Две вещи, о которых важно помнить при изменениях:
+
+- **Команды воркеров идут в песочнице по умолчанию** (`SandboxPolicy`, значение `[sandbox] shell` по умолчанию — `workers`). Лид команд не выполняет.
+- **git в worktree воркера запускается только по каталогу, найденному из основного репозитория** (`GitWorkspace.TrustedGitDirAsync`), а не по файлу `.git` в worktree: воркер пишет в свой worktree и мог бы подменить этот файл конфигом, выполняющим команды (`core.fsmonitor`). Новые git-вызовы роя в worktree должны идти через `RunInWorktreeAsync`.
+
+## Kairo.PcControl
+
+Управление ПК: System 2 (большая модель) через инструменты `PcWindows`, `PcLaunch`, `PcObserve`, `PcAct`, `PcScreenshot`, `PcCheck`, `PcPursue`, `PcRunPolicy`, `PcRuns`; System 1 (`IDecisionModel` в `Kairo.Core/Decisions`, адаптер Jev в `Kairo.Providers`) решает шаги быстрого цикла. Проект не AOT: UI Automation идёт через COM. Подробно — [управление ПК](specs/pc-control.md), [политики решений](specs/decision-policy.md), риски — [SECURITY-MODEL](SECURITY-MODEL.md#управление-пк).
+
+| Часть | Что делает |
+|---|---|
+| `IDesktop` / `UiaDesktop` | Окна, дерево UI Automation одним кэшированным чтением, действия через паттерны, стабильные id элементов |
+| `PcGuard` | Список программ из `[pc]`, запрет на терминалы, менеджеры паролей, системные инструменты, редакторы кода; слова и сочетания, которые считаются рискованными |
+| `Candidates` + `PursueLoop` | Варианты шага из дерева, один запрос к Jev на шаг, ворота уверенности и риска, эскалация, проверка результата |
+| `PolicyRunner`, `Policy.cs` | Проверка и исполнение JSON-политики: шаги, тексты, рефлексы, лимиты |
+| `PcRunQueue` (`PcRuns.cs`) | Фоновые запуски: System 1 работает, пока System 2 планирует |
+| `DecisionHistory` | Журнал решений без содержимого и порог уверенности по программам |
+| `ControlOverlay` | Красная плашка поверх всех окон, пока работает инструмент `Pc*` |
+
 ## Kairo.Windows
 
-Здесь только низкоуровневый доступ к системе. Логика управления ПК и игр (System 1 + System 2, кандидаты, эскалация) живёт в `Kairo.Policy` — см. [управление ПК](specs/pc-control.md) и [политики решений](specs/decision-policy.md).
+Низкоуровневый доступ к системе без логики агента.
 
 | Возможность | Реализация |
 |---|---|
-| Win32 interop | `Microsoft.Windows.CsWin32` (source generator, совместим с AOT) |
-| Окна, процессы | Win32 API |
-| UI Automation | FlaUI (UIA3). Проверить совместимость с AOT в M0 |
-| Ввод мыши и клавиатуры | `SendInput` |
-| Скриншоты | Windows.Graphics.Capture |
-| Shell | ConPTY + Job Objects (убить всё дерево процессов, лимиты CPU и памяти) |
-| Песочница | AppContainer + Job Object; запасные варианты — Windows Sandbox / WSL |
+| Win32 interop | `LibraryImport` (source generators, совместимо с AOT) |
+| Shell-терминал | ConPTY + Job Objects (убить всё дерево процессов) |
+| Песочница | AppContainer + Job Object (память, дерево процессов) + `icacls` для доступа к папкам; отказ вместо обхода. Запасные варианты (Windows Sandbox, WSL) не делались |
 | Секреты | `CredWrite` / `CredRead` (Credential Manager) |
+
+Окна, UI Automation, ввод (`SendInput`) и скриншоты (копирование области экрана) лежат в `Kairo.PcControl`, потому что завязаны на логику управления ПК.
 
 ## Kairo.Desktop
 
@@ -231,8 +252,9 @@ kairo/
     Kairo.Mcp/
     Kairo.Tools/
     Kairo.Swarm/
-    Kairo.Policy/
+    Kairo.PcControl/
     Kairo.Windows/
+    Kairo.Host/
     Kairo.Cli/
     Kairo.Desktop/
   ui/                          # React + Vite

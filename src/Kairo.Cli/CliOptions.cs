@@ -85,6 +85,7 @@ internal sealed class CliOptions
                 case "swarm" when o.Command is null: o.Command = "swarm"; break;
                 case "jev" when o.Command is null: o.Command = "jev"; break;
                 case "pc" when o.Command is null: o.Command = "pc"; break;
+                case "sandbox" when o.Command is null: o.Command = "sandbox"; break;
                 case "--text": o.PcTexts.Add(Next()); break;
                 case "--hotkeys": o.PcHotkeys = Next(); break;
                 case "--launch": o.PcLaunch = true; break;
@@ -94,7 +95,7 @@ internal sealed class CliOptions
                 case "--max-tokens": o.MaxTokens = long.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--max-minutes": o.MaxMinutes = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--concurrency": o.Concurrency = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
-                case not null when o.Command is "swarm" or "jev" or "pc" && !a.StartsWith('-'): o.Positional.Add(a); break;
+                case not null when o.Command is "swarm" or "jev" or "pc" or "sandbox" && !a.StartsWith('-'): o.Positional.Add(a); break;
                 default: throw new ArgumentException($"Unknown argument '{a}'. Run 'kairo --help'.");
             }
         }

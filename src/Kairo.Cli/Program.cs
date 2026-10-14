@@ -34,6 +34,8 @@ if (options.Help)
 
 var cwd = Path.GetFullPath(options.WorkingDirectory ?? Environment.CurrentDirectory);
 var userConfigDir = KairoConfig.UserConfigDirectory;
+// The sandbox opens folders to its container with an ACL entry; whatever way the CLI ends, take the entries back (the app does the same on close).
+AppDomain.CurrentDomain.ProcessExit += (_, _) => AppContainerSandbox.RevokeAll();
 using var store = new SessionStore(Environment.GetEnvironmentVariable("KAIRO_DATA_DB") ?? SessionStore.DefaultPath);
 
 if (options.Command == "sessions")
@@ -45,6 +47,9 @@ if (options.Command == "sessions")
 
 if (options.Command == "pc")
     return await PcCommand.RunAsync(options, userConfigDir, new CredentialStore());
+
+if (options.Command == "sandbox")
+    return await SandboxCommand.RunAsync(options, userConfigDir);
 
 if (options.Command == "jev")
     return await JevCommand.RunAsync(options, userConfigDir, new CredentialStore());
