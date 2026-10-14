@@ -62,7 +62,7 @@ jobs:
       - name: Pack
         run: >
           vpk pack --packId Kairo --packVersion ${{ env.VERSION }} --packDir publish --mainExe Kairo.exe
-          --packTitle Kairo --packAuthors "The Kairo Authors" --releaseNotes RELEASE_NOTES.md --outputDir Releases
+          --packTitle Kairo --packAuthors "The Kairo Authors" --icon src/Kairo.Desktop/Assets/Kairo.ico --releaseNotes RELEASE_NOTES.md --outputDir Releases
 
       # Unsigned until a certificate is set up: add --signParams (or Azure Trusted Signing) to the pack step.
       - name: Upload to the GitHub release

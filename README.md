@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo/kairo.svg" alt="Kairo" width="96" height="96"></p>
+
 # Kairo
 
 **Открытый AI-суперапп для Windows.** Агент для кода уровня Claude Code / Codex / Cursor, управление ПК, MCP и каталог агентов — в одном нативном приложении. Подключи свою модель (BYOK) или локальную — без привязки к одному вендору.

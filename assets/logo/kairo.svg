@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Kairo</title>
+  <rect width="512" height="512" rx="116" fill="#ff5a36"/>
+  <g stroke="#ffffff" stroke-width="26" stroke-linecap="round" fill="none">
+    <path d="M160 122V390"/>
+    <path d="M160 256L352 122"/>
+    <path d="M160 256L352 390"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="160" cy="122" r="40"/>
+    <circle cx="160" cy="390" r="40"/>
+    <circle cx="352" cy="122" r="40"/>
+    <circle cx="352" cy="390" r="40"/>
+  </g>
+  <circle cx="160" cy="256" r="46" fill="#ffffff"/>
+  <circle cx="160" cy="256" r="20" fill="#ff5a36"/>
+</svg>

@@ -7,6 +7,7 @@
     <RootNamespace>Kairo.Desktop</RootNamespace>
     <AssemblyName>Kairo</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/Kairo.ico</ApplicationIcon>
     <UseWinUI>true</UseWinUI>
     <!-- Unpackaged, self-contained Windows App SDK: no MSIX and no separate runtime install (installer choice: OPEN-QUESTIONS #1). -->
     <WindowsPackageType>None</WindowsPackageType>
@@ -28,6 +29,11 @@
       <_Parameter1>KairoUpdateUrl</_Parameter1>
       <_Parameter2>$(KairoUpdateUrl)</_Parameter2>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- The window and taskbar icon is set at run time from this file (the exe's own icon is embedded by ApplicationIcon). -->
+  <ItemGroup>
+    <Content Include="Assets/Kairo.ico" Link="Kairo.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.Resize(new SizeInt32(1280, 820));
+        var icon = System.IO.Path.Combine(AppContext.BaseDirectory, "Kairo.ico");
+        if (System.IO.File.Exists(icon))
+            AppWindow.SetIcon(icon);
 
         // Core → UI. Handlers run off the UI thread, so marshal every send back to it.
         _rpc = new RpcDispatcher(json =>
