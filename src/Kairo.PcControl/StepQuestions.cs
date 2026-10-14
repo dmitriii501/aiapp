@@ -29,4 +29,17 @@ public static class StepQuestions
         "The recent steps are bringing the sub-goal closer: they are not repeating each other, undoing each other or going in circles.",
         WhenYes: "the recent steps make progress",
         WhenNo: "the recent steps repeat, undo each other or go in circles");
+
+    public const string DecidableId = "decidable";
+
+    /// <summary>
+    /// Asked next to <see cref="Achieved"/> by PcCheck: can the element list say whether the criterion holds at all? A window that shows
+    /// little of its content to UI Automation (a messenger's chat, a picture) answers "no" to every question about that content, and a
+    /// "no" that means "I cannot see it" must not be read as "it did not happen".
+    /// </summary>
+    public static YesNoQuestion Decidable() => new(
+        "The list of elements on this screen contains enough information to tell whether the success criterion is met or not, " +
+        "either way. It is NOT enough when the criterion is about content the list does not show (a message that was sent, a picture, a video playing).",
+        WhenYes: "the list shows what is needed to decide, yes or no",
+        WhenNo: "the list does not show what the criterion is about");
 }

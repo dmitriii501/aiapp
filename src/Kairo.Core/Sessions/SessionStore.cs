@@ -46,6 +46,7 @@ public sealed class SessionStore : IDisposable
                 session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                 seq         INTEGER NOT NULL,
                 json        TEXT NOT NULL,
+                created_at  TEXT,
                 PRIMARY KEY (session_id, seq)
             );
             CREATE INDEX IF NOT EXISTS sessions_by_cwd ON sessions(cwd, updated_at);
@@ -54,8 +55,20 @@ public sealed class SessionStore : IDisposable
                 last_used   TEXT NOT NULL
             );
             """);
+        // Databases made before messages were timed get the column; their old rows stay untimed (null).
+        if (!HasColumn("messages", "created_at"))
+            Execute("ALTER TABLE messages ADD COLUMN created_at TEXT");
         Execute(CheckpointStore.Schema);
         Checkpoints = new CheckpointStore(_db, _lock);
+    }
+
+    private bool HasColumn(string table, string column)
+    {
+        lock (_lock)
+        {
+            using var cmd = Command($"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $name", ("$name", column));
+            return Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) > 0;
+        }
     }
 
     public static string DefaultPath =>
@@ -114,11 +127,29 @@ public sealed class SessionStore : IDisposable
     {
         var json = JsonSerializer.Serialize(message, SessionJsonContext.Default.ChatMessage);
         Execute("""
-            INSERT INTO messages (session_id, seq, json)
-                VALUES ($id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE session_id = $id), $json);
+            INSERT INTO messages (session_id, seq, json, created_at)
+                VALUES ($id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE session_id = $id), $json, $now);
             UPDATE sessions SET updated_at = $now WHERE id = $id;
             """,
             ("$id", sessionId), ("$json", json), ("$now", DateTimeOffset.UtcNow.ToString("O")));
+    }
+
+    /// <summary>The messages of a session with the time each was written (null for messages from before they were timed).</summary>
+    public IReadOnlyList<TimedMessage> LoadTimedMessages(string sessionId)
+    {
+        var result = new List<TimedMessage>();
+        lock (_lock)
+        {
+            using var cmd = Command("SELECT seq, json, created_at FROM messages WHERE session_id = $id ORDER BY seq", ("$id", sessionId));
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var at = reader.IsDBNull(2) ? (DateTimeOffset?)null
+                    : DateTimeOffset.Parse(reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture);
+                result.Add(new TimedMessage(reader.GetInt32(0), at, JsonSerializer.Deserialize(reader.GetString(1), SessionJsonContext.Default.ChatMessage)!));
+            }
+        }
+        return result;
     }
 
     public void SetTitle(string sessionId, string title) =>

@@ -13,6 +13,9 @@ namespace Kairo.PcControl;
 /// </summary>
 internal sealed class PcCheckTool(PcSession session) : ITool
 {
+    /// <summary>Below this the list is taken not to show what the criterion is about.</summary>
+    public const double DecidableBelow = 0.4;
+
     public ToolSpec Spec { get; } = new(
         "PcCheck",
         "Asks the fast decision model whether a window shows what you expect right now, and returns a probability in about a third of a " +
@@ -48,10 +51,19 @@ internal sealed class PcCheckTool(PcSession session) : ITool
         }, PcJson.Default.DictionaryStringString);
 
         double probability;
+        double decidable = 1;
         try
         {
-            var request = DecisionRequest.Single(DecisionState.Json(state), "achieved", StepQuestions.Achieved());
-            probability = (await model.DecideAsync(request, ct).ConfigureAwait(false)).YesNo("achieved").Probability;
+            // Two questions in one request: is it so, and can this list say.
+            var request = new DecisionRequest(DecisionState.Json(state), new Dictionary<string, DecisionQuestion>
+            {
+                ["achieved"] = StepQuestions.Achieved(),
+                [StepQuestions.DecidableId] = StepQuestions.Decidable(),
+            });
+            var answer = await model.DecideAsync(request, ct).ConfigureAwait(false);
+            probability = answer.YesNo("achieved").Probability;
+            if (answer.Answers.TryGetValue(StepQuestions.DecidableId, out var d) && d is YesNoAnswer decidableAnswer)
+                decidable = decidableAnswer.Probability;
         }
         catch (DecisionException ex)
         {
@@ -59,6 +71,13 @@ internal sealed class PcCheckTool(PcSession session) : ITool
         }
 
         var p = probability.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        // A "no" about something the element list cannot show is not a "no": the model must not act on it (resend, retry) as if it were.
+        if (probability < 0.9 && decidable < DecidableBelow)
+        {
+            var q = decidable.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            return new ToolResult($"cannot tell (it is so: {p}, the list can decide: {q}) — the {look.Elements.Count} elements of {look.Window.Process} do not show what \"{criterion}\" is about. " +
+                                  "This is NOT \"no\": do not repeat the action because of it. Look with PcScreenshot (or PcObserve with a query).");
+        }
         var verdict = probability >= 0.9 ? "yes" : probability <= 0.1 ? "no" : "not clear";
         var advice = probability is > 0.1 and < 0.9 ? " Not sure enough: look yourself (PcObserve, or PcScreenshot for what the list does not show)." : "";
         return new ToolResult($"{verdict} ({p}) — \"{criterion}\" in {look.Window.Process} \"{look.Window.Title}\", {look.Elements.Count} elements, {clock.ElapsedMilliseconds} ms.{advice}");

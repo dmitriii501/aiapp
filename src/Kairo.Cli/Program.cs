@@ -38,6 +38,9 @@ var userConfigDir = KairoConfig.UserConfigDirectory;
 AppDomain.CurrentDomain.ProcessExit += (_, _) => AppContainerSandbox.RevokeAll();
 using var store = new SessionStore(Environment.GetEnvironmentVariable("KAIRO_DATA_DB") ?? SessionStore.DefaultPath);
 
+if (options.Command == "sessions" && options.Positional.FirstOrDefault() == "timeline")
+    return TimelineCommand.Run(store, options.Positional.Count > 1 ? options.Positional[1] : null);
+
 if (options.Command == "sessions")
 {
     foreach (var s in store.List())

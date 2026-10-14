@@ -87,6 +87,34 @@ public sealed class PcRunsTests
     }
 
     [Fact]
+    public async Task A_check_about_something_the_list_cannot_show_says_cannot_tell_and_not_no()
+    {
+        _desktop.Elements = [El("e1", "edit", "Message", UiCapability.SetValue)];
+        double achieved = 0.02, decidable = 0.2;
+        var model = new ScriptedDecisionModel((_, _) => new DecisionResult("scripted", new Dictionary<string, DecisionAnswer>
+        {
+            ["achieved"] = new YesNoAnswer(achieved),
+            ["decidable"] = new YesNoAnswer(decidable),
+        }, 10, TimeSpan.Zero));
+        var check = Tool(Tools(model), "PcCheck");
+
+        var blind = await check.InvokeAsync(Json(new { criterion = "The message was sent" }), Ctx, default);
+        decidable = 0.9;
+        var clearNo = await check.InvokeAsync(Json(new { criterion = "A dialog is open" }), Ctx, default);
+        achieved = 0.97;
+        decidable = 0.1;
+        var yes = await check.InvokeAsync(Json(new { criterion = "A Message field is shown" }), Ctx, default);
+
+        Assert.StartsWith("cannot tell", blind.Content);
+        Assert.Contains("NOT \"no\"", blind.Content);
+        Assert.Contains("do not repeat the action", blind.Content);
+        Assert.False(blind.IsError);
+        Assert.StartsWith("no (0.02)", clearNo.Content);   // the list can decide: that is a real no
+        Assert.StartsWith("yes (0.97)", yes.Content);       // a sure yes stands whatever else was said
+        Assert.Contains("decidable", model.Requests[0].Questions.Keys);
+    }
+
+    [Fact]
     public async Task A_check_without_a_fast_model_says_to_look_instead()
     {
         _desktop.Elements = [El("e1", "button", "Save", UiCapability.Invoke)];
