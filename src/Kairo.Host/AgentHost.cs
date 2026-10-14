@@ -417,7 +417,7 @@ public sealed class AgentHost(
             var isPlan = request.Tool == PermissionEngine.ExitPlanTool;
             var prompt = new PermissionPrompt(requestId, request.Tool, request.Call.Summary, subject,
                 isPlan ? "plan" : request.Call.Risk.ToString().ToLowerInvariant(), request.Reason,
-                request.Diff is { Length: > 0 } ? request.Diff : null, isPlan || request.Call.Risk == RiskLevel.System ? request.Call.Detail : null);
+                request.Diff is { Length: > 0 } ? request.Diff : null, isPlan || request.Call.Risk == RiskLevel.System || request.Tool == "PcRunPolicy" ? request.Call.Detail : null);
             var pending = new PendingPermission(sessionId, prompt, new TaskCompletionSource<PermissionAnswer>(TaskCreationOptions.RunContinuationsAsynchronously));
             host._pending[requestId] = pending;
 

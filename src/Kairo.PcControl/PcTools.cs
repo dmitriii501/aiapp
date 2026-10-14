@@ -21,7 +21,7 @@ public static class PcTools
     /// <param name="overlay">The on-screen banner; by default the real one when the real desktop is used (and <c>[pc] overlay</c> is not off).</param>
     public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null, ControlOverlay? overlay = null)
     {
-        if (config.PcEnabled != true || config.PcApps.Count == 0)
+        if (config.PcEnabled != true || (config.PcApps.Count == 0 && config.PcAllApps != true))
             return [];
         // The first decision should not pay for DNS and the TLS handshake: open the connection while the model is still writing its plan.
         if (Interlocked.Exchange(ref _warmed, 1) == 0)
@@ -39,7 +39,7 @@ public static class PcTools
 
         var session = new PcSession(
             desktop ?? UiaDesktop.Shared,
-            new PcGuard(config.PcApps),
+            new PcGuard(config.PcApps, config.PcAllApps == true),
             decisionModel,
             new PursueOptions(MaxSteps: config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7),
             overlay ?? (desktop is null && config.PcOverlay != false ? ControlOverlay.Shared : null),
@@ -162,7 +162,10 @@ internal sealed class PcWindowsTool(PcSession session) : ITool
             sb.Append("No window of an allowed application is open.\n");
         foreach (var w in allowed)
             sb.Append(w.Id).Append(" · ").Append(w.Process).Append(" · \"").Append(w.Title).Append('"').Append(w.Foreground ? " (in front)" : "").Append(w.Minimized ? " (minimized)" : "").Append('\n');
-        sb.Append("Allowed programs: ").Append(string.Join(", ", session.Guard.Allowed.Order())).Append(". Windows of other programs are not shown and cannot be controlled.");
+        if (session.Guard.AllowAll)
+            sb.Append("Every program may be controlled except terminals, password managers, system tools, code editors and Kairo itself (those are not shown).");
+        else
+            sb.Append("Allowed programs: ").Append(string.Join(", ", session.Guard.Allowed.Order())).Append(". Windows of other programs are not shown and cannot be controlled.");
         return Task.FromResult(new ToolResult(sb.ToString()));
     }
 }
@@ -182,6 +185,8 @@ internal sealed class PcLaunchTool(PcSession session) : ITool
             throw new ToolInputException($"{name} cannot be controlled (terminals, password managers and system tools are always out of reach).");
         if (!session.Guard.IsAllowed(name))
             throw new ToolInputException($"{name} is not in the list of applications Kairo may control. The user adds it under [pc] apps in config.toml.");
+        if (session.Guard.AllowAll && !session.Guard.IsListed(name) && session.Desktop.LaunchRefusal(name) is { } refusal)
+            throw new ToolInputException(refusal);
         return session.Assess("PcLaunch", name, name);
     }
 
@@ -462,7 +467,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
         var policy = Parse(input);
         var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? policy.App);
         var goal = policy.Goal.ReplaceLineEndings(" ");
-        return new ToolAssessment(RiskLevel.System, window.Process, $"PcRunPolicy({window.Process}: {(goal.Length > 100 ? goal[..100] + "…" : goal)})", policy.Describe());
+        return new ToolAssessment(session.Autonomous ? RiskLevel.Exec : RiskLevel.System, window.Process, $"PcRunPolicy({window.Process}: {(goal.Length > 100 ? goal[..100] + "…" : goal)})", policy.Describe());
     }
 
     public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)

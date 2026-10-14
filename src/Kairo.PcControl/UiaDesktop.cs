@@ -73,6 +73,8 @@ public sealed class UiaDesktop : IDesktop
 
     public bool StopRequested() => Win32.StopKeyPressed();
 
+    public string? LaunchRefusal(string name) => LaunchCheck.Refusal(name);
+
     public WindowInfo? Launch(string application, TimeSpan wait)
     {
         var name = PcGuard.Normalize(application);

@@ -104,6 +104,8 @@ export interface Settings {
   pcVision?: boolean;
   /** PC tools do not ask in the mode without confirmations. */
   pcAutonomous?: boolean;
+  /** Every program may be controlled except terminals, password managers and system tools. */
+  pcAllApps?: boolean;
 }
 
 export interface PcApp {
@@ -124,6 +126,7 @@ export interface SettingsUpdate {
   pcEnabled?: boolean;
   pcVision?: boolean;
   pcAutonomous?: boolean;
+  pcAllApps?: boolean;
 }
 
 export interface Workspace {

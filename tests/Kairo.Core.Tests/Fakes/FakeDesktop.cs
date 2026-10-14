@@ -38,6 +38,10 @@ internal sealed class FakeDesktop : IDesktop
         return OnPerform?.Invoke(action) ?? ActionOutcome.Success();
     }
 
+    public string? LaunchRefusalText { get; set; }
+
+    public string? LaunchRefusal(string name) => LaunchRefusalText;
+
     public WindowInfo? Launch(string application, TimeSpan wait) => Window;
 
     private int _shotId;

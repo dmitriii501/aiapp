@@ -7,9 +7,15 @@ namespace Kairo.PcControl;
 /// The allowed applications are the user's own list; the denied ones are never reachable, whatever the list says, because driving
 /// them would sidestep another fence (a terminal is a shell without the shell's rules and sandbox).
 /// </summary>
-public sealed partial class PcGuard(IEnumerable<string> allowedApps)
+public sealed partial class PcGuard(IEnumerable<string> allowedApps, bool allowAll = false)
 {
     private readonly HashSet<string> _allowed = new(allowedApps.Select(Normalize), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The user let Kairo drive every program (<c>[pc] all_apps</c>); the denied list still holds.</summary>
+    public bool AllowAll { get; } = allowAll;
+
+    /// <summary>The program is on the user's own list (as opposed to allowed only because everything is).</summary>
+    public bool IsListed(string process) => _allowed.Contains(Normalize(process));
 
     /// <summary>Programs that cannot be controlled even when listed: terminals, password managers, system tools and Kairo itself.</summary>
     private static readonly string[] Denied =
@@ -31,14 +37,14 @@ public sealed partial class PcGuard(IEnumerable<string> allowedApps)
 
     public bool IsDenied(string process) => Denied.Contains(Normalize(process), StringComparer.OrdinalIgnoreCase);
 
-    public bool IsAllowed(string process) => !IsDenied(process) && _allowed.Contains(Normalize(process));
+    public bool IsAllowed(string process) => !IsDenied(process) && (AllowAll || _allowed.Contains(Normalize(process)));
 
     /// <summary>The reason a window may not be touched, or null when it may.</summary>
     public string? Refusal(WindowInfo window)
     {
         if (IsDenied(window.Process))
             return $"{window.Process} cannot be controlled (terminals, password managers and system tools are always out of reach).";
-        if (!_allowed.Contains(Normalize(window.Process)))
+        if (!AllowAll && !_allowed.Contains(Normalize(window.Process)))
             return $"{window.Process} is not in the list of applications Kairo may control. The user adds it under [pc] apps in config.toml.";
         return null;
     }

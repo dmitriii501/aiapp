@@ -42,6 +42,7 @@ export function SettingsDialog() {
   const [pcEnabled, setPcEnabled] = useState(settings?.pcEnabled ?? false);
   const [pcVision, setPcVision] = useState(settings?.pcVision ?? false);
   const [pcAutonomous, setPcAutonomous] = useState(settings?.pcAutonomous ?? false);
+  const [pcAllApps, setPcAllApps] = useState(settings?.pcAllApps ?? false);
   const [openApps, setOpenApps] = useState<PcApp[] | null>(null);
   const [pickedApp, setPickedApp] = useState("");
   const [saving, setSaving] = useState(false);
@@ -73,7 +74,7 @@ export function SettingsDialog() {
     e.preventDefault();
     setSaving(true);
     const ok = await saveSettings(
-      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork, pcEnabled, pcVision, pcAutonomous },
+      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork, pcEnabled, pcVision, pcAutonomous, pcAllApps },
       key.trim() ? { provider, key: key.trim() } : undefined,
     );
     const searchOk = ok && (braveKey.trim() ? await saveSettings({}, { provider: "brave", key: braveKey.trim() }) : true);
@@ -220,6 +221,10 @@ export function SettingsDialog() {
           <label className="check">
             <input type="checkbox" checked={pcAutonomous} onChange={(e) => setPcAutonomous(e.target.checked)} />
             <span>Не спрашивать в режиме «Без подтверждений» (только для программ из списка)</span>
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={pcAllApps} onChange={(e) => setPcAllApps(e.target.checked)} />
+            <span>Управлять любыми программами (кроме терминалов, менеджеров паролей, системных инструментов и редакторов кода)</span>
           </label>
           <Field
             label="Программы, которыми можно управлять"

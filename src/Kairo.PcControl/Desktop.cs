@@ -163,6 +163,9 @@ public interface IDesktop
     /// <summary>Starts an application by its process name (it was checked against the allowed list) and returns its window when it shows up.</summary>
     WindowInfo? Launch(string application, TimeSpan wait);
 
+    /// <summary>Why a program that is not on the user's list may not be started by name (null: it may). Only asked when every program is allowed.</summary>
+    string? LaunchRefusal(string name) => null;
+
     /// <summary>A picture of the window as it is on the screen (it is brought to the front first). The returned number names it for ClickAt.</summary>
     Snapshot Capture(long handle);
 
