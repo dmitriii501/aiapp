@@ -84,8 +84,15 @@ public sealed class ProcessHooks(IReadOnlyList<HookConfig> hooks) : IHooks
         {
             var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
             var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
-            await process.StandardInput.BaseStream.WriteAsync(BuildInput(input), timeout.Token).ConfigureAwait(false);
-            process.StandardInput.Close();
+            try
+            {
+                await process.StandardInput.BaseStream.WriteAsync(BuildInput(input), timeout.Token).ConfigureAwait(false);
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // A hook that never reads its input and has already exited closed the pipe: its exit code and output still count.
+            }
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
             return (process.ExitCode, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false));
         }

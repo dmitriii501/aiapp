@@ -60,7 +60,8 @@ public sealed class ShellToolTests
     {
         var result = await Run("'one'\nGet-Item 'C:/definitely-not-here'");
 
-        Assert.Matches(@"(строка|line):2", result.Content.Replace(" ", ""));
+        // Windows PowerShell 5.1 says "line:2"; PowerShell 7 draws "Line|" and "2|Get-Item".
+        Assert.Matches(@"(?i)(строка|line):2|line\|\s*2\|", result.Content.Replace(" ", ""));
     }
 
 }
