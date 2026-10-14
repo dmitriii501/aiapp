@@ -15,7 +15,11 @@ public sealed record PursuePlan(string Subgoal, string SuccessCriterion, IReadOn
 /// <param name="MinConfidence">A choice the model is less sure of than this is handed to the big model.</param>
 /// <param name="MinEffect">The probability the previous step did what was intended; below it counts toward "no effect".</param>
 /// <param name="StallLimit">Steps in a row after which the screen looks exactly the same: the loop gives up.</param>
-public sealed record PursueOptions(int MaxSteps = 25, double MinConfidence = 0.7, double MinEffect = 0.35, int StallLimit = 3, int MaxElements = 250);
+/// <param name="SettleMs">The pause right after an action. Short on purpose: the loop looks again and, if nothing moved yet, waits for the screen itself.</param>
+/// <param name="ReactWaitMs">How long to wait between looks while the screen still looks as it did before the action.</param>
+/// <param name="ReactRetries">How many more looks to take before the screen is taken to be unchanged.</param>
+public sealed record PursueOptions(int MaxSteps = 25, double MinConfidence = 0.7, double MinEffect = 0.35, int StallLimit = 3, int MaxElements = 250,
+    int SettleMs = 30, int ReactWaitMs = 70, int ReactRetries = 2);
 
 public enum PursueStatus
 {
@@ -58,7 +62,11 @@ public static class Candidates
         var list = new List<Candidate>();
         var v = observation.Version;
 
-        foreach (var e in observation.Elements)
+        // What opened on top (a menu, a dialog) is what the next step is about, and it must survive the cut at the end.
+        var firstOverlay = observation.Elements.ToList().FindIndex(e => e.Depth == 0 && e.Role is "popup menu" or "dialog");
+        var ordered = firstOverlay > 0 ? observation.Elements.Skip(firstOverlay).Concat(observation.Elements.Take(firstOverlay)) : observation.Elements;
+
+        foreach (var e in ordered)
         {
             if (!e.Enabled || e.Password && !e.Can.HasFlag(UiCapability.Focus))
                 continue;
@@ -74,6 +82,8 @@ public static class Candidates
             var opensMenu = e.Role == "menu item" && e.Can.HasFlag(UiCapability.Invoke) && e.Can.HasFlag(UiCapability.Expand);
             if (e.Can.HasFlag(UiCapability.Invoke))
                 Add($"invoke:{e.Id}", opensMenu ? "open menu item" : "click", DesktopActionKind.Invoke);
+            else if (ClickableByMouse(e))
+                Add($"click:{e.Id}", "click", DesktopActionKind.Invoke, extra: " (by mouse)");
             if (e.Can.HasFlag(UiCapability.Toggle))
                 Add($"toggle:{e.Id}", "toggle", DesktopActionKind.Toggle, extra: e.Checked is { } c ? (c ? " (now on)" : " (now off)") : null);
             if (e.Can.HasFlag(UiCapability.Expand) && !opensMenu)
@@ -109,6 +119,12 @@ public static class Candidates
         return list;
     }
 
+    private static readonly HashSet<string> MouseRoles = ["button", "link", "list item", "tab item", "tree item", "data item", "check box", "radio button", "split button", "header item", "menu item"];
+
+    // A named control that offers no pattern at all (custom-drawn rows, web content) can still be clicked where it is.
+    private static bool ClickableByMouse(UiElement e) =>
+        MouseRoles.Contains(e.Role) && e.Name.Length > 0 && (e.Can & ~UiCapability.Focus) == UiCapability.None;
+
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..max] + "…";
 }
 
@@ -128,6 +144,9 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
         string? previous = null;          // description of the action taken in the step before
         string? digestBeforeAction = null;
         var (stalled, noEffect, failures) = (0, 0, 0);
+        var recent = new List<string>();  // the last few steps with what they did to the screen
+        var reacting = false;             // an action was taken and its effect is not yet seen
+        var settle = TimeSpan.FromMilliseconds(_options.SettleMs);
 
         PursueReport Finish(PursueStatus status, string reason, string? pending = null) => new(status, reason, steps, last, pending);
 
@@ -144,9 +163,18 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
 
             var clock = Stopwatch.StartNew();
             Observation observation;
+            var before = last;
             try
             {
                 observation = desktop.Observe(window);
+                // The pause after an action is short; if the screen still looks as before, give the app a little longer instead of
+                // deciding on a stale picture (or counting a slow app as a stuck one).
+                for (var retry = 0; reacting && digestBeforeAction is not null && observation.Digest == digestBeforeAction && retry < _options.ReactRetries; retry++)
+                {
+                    if (ct.WaitHandle.WaitOne(_options.ReactWaitMs))
+                        return Finish(PursueStatus.Aborted, "cancelled");
+                    observation = desktop.Observe(window);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -154,6 +182,16 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             }
             last = observation;
             var observeMs = clock.ElapsedMilliseconds;
+
+            string? changes = null;
+            if (reacting && previous is not null)
+            {
+                changes = before is null ? null : Observation.Diff(before, observation);
+                recent.Add($"{previous} -> {(changes is null ? "no visible change" : "the screen changed")}");
+                if (recent.Count > 4)
+                    recent.RemoveAt(0);
+            }
+            reacting = false;
 
             // The screen looks the same as before the last action: it did nothing, or has not reacted yet.
             if (digestBeforeAction is not null && observation.Digest == digestBeforeAction)
@@ -168,7 +206,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             {
                 clock.Restart();
                 digestBeforeAction = observation.Digest;
-                var reflexOutcome = SafePerform(window, hit.Action);
+                var reflexOutcome = SafePerform(window, hit.Action, settle);
                 var reflexStep = new PursueStep(number, $"reflex {hit.Reflex.Name}: {hit.Action}", 1.0, observeMs, 0, clock.ElapsedMilliseconds, reflexOutcome.Ok, reflexOutcome.Message);
                 steps.Add(reflexStep);
                 onStep?.Invoke(reflexStep);
@@ -186,12 +224,12 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             {
                 try
                 {
-                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous), ct).ConfigureAwait(false);
+                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous, changes, recent), ct).ConfigureAwait(false);
                 }
                 catch (DecisionException ex) when (ex.Kind is DecisionFailure.Timeout or DecisionFailure.Busy or DecisionFailure.Unavailable)
                 {
                     // One lost answer (a dead connection, a hiccup) should not end a run that was going well: ask again once, on a fresh look.
-                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous), ct).ConfigureAwait(false);
+                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous, changes, recent), ct).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -260,7 +298,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
 
             clock.Restart();
             digestBeforeAction = observation.Digest;
-            var outcome = SafePerform(window, picked.Action!);
+            var outcome = SafePerform(window, picked.Action!, settle);
             var actMs = clock.ElapsedMilliseconds;
 
             if (!outcome.Ok)
@@ -273,6 +311,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             }
 
             failures = 0;
+            reacting = true;
             previous = picked.Description;
             Record(true, outcome.Message, actMs);
         }
@@ -280,11 +319,11 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
         return Finish(PursueStatus.StepLimit, $"{_options.MaxSteps} steps without reaching the goal");
     }
 
-    private ActionOutcome SafePerform(long window, DesktopAction action)
+    private ActionOutcome SafePerform(long window, DesktopAction action, TimeSpan settle)
     {
         try
         {
-            return desktop.Perform(window, action);
+            return desktop.Perform(window, action, settle);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -292,7 +331,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
         }
     }
 
-    private static DecisionRequest Request(Observation observation, PursuePlan plan, List<Candidate> candidates, string? previous)
+    private static DecisionRequest Request(Observation observation, PursuePlan plan, List<Candidate> candidates, string? previous, string? changes, List<string> recent)
     {
         var stateJson = JsonSerializer.Serialize(new Dictionary<string, string?>
         {
@@ -301,6 +340,8 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             ["app"] = observation.Window.Process,
             ["window_title"] = observation.Window.Title,
             ["previous_action"] = previous,
+            ["changes_since_previous_action"] = previous is null ? null : changes ?? "nothing on the screen changed",
+            ["recent_steps"] = recent.Count == 0 ? null : string.Join("; ", recent),
             ["screen"] = observation.ToText(),
         }, PcJson.Default.DictionaryStringString);
 

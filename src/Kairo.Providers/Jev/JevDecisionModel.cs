@@ -64,8 +64,25 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or TimeoutException)
         {
+            return;
+        }
+
+        // The first decision after a quiet spell has been seen to take seconds, not a third of a second: one real, tiny request, once per
+        // process, takes that cost off the first step of a run.
+        if (Interlocked.Exchange(ref _primed, 1) == 0)
+        {
+            try
+            {
+                await DecideAsync(DecisionRequest.Single(DecisionState.Text("warm-up"), "next",
+                    new ChoiceQuestion("Which option is listed first?", [new ChoiceOption("a"), new ChoiceOption("b")])), ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is DecisionException or OperationCanceledException)
+            {
+            }
         }
     }
+
+    private static int _primed;
 
     public async Task<DecisionResult> DecideAsync(DecisionRequest request, CancellationToken ct)
     {

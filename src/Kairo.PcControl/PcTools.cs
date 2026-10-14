@@ -372,7 +372,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
         "Hands one sub-goal to the fast decision model, which works through it step by step at about a third of a second a step, without " +
         "asking you in between: it reads the window, picks the next click or typing from what the screen offers, does it and checks the " +
         "result. Use it for the routine parts of a task (open a menu, fill a form from prepared texts, save). Give a clear success_criterion " +
-        "that can be seen on the screen. The fast model only types texts you prepare in `texts` and presses shortcuts you list in `hotkeys`. " +
+        "that can be seen on the screen after its last action (a menu that closes when an item is clicked cannot show the item's state). The fast model only types texts you prepare in `texts` and presses shortcuts you list in `hotkeys`. " +
         "It stops and gives the screen back to you when it is unsure, when a step looks hard to undo (delete, send, pay, sign out, close " +
         "without saving) or when nothing changes: then decide that step yourself with PcAct. Needs a Jev key; without it use PcObserve and PcAct.",
         ToolInput.Schema(

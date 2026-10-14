@@ -104,6 +104,8 @@ public sealed class UiaDesktop : IDesktop
         var centers = new Dictionary<string, (int X, int Y)>();
         var clock = Stopwatch.StartNew();
         var truncated = false;
+        var mainTruncated = false;
+        var limit = _maxElements;
 
         void Walk(IUIAutomationElement parent, int depth)
         {
@@ -121,7 +123,7 @@ public sealed class UiaDesktop : IDesktop
 
             while (child is not null)
             {
-                if (elements.Count >= _maxElements || clock.ElapsedMilliseconds > 2500)
+                if (elements.Count >= limit || clock.ElapsedMilliseconds > 2500)
                 {
                     truncated = true;
                     return;
@@ -157,6 +159,13 @@ public sealed class UiaDesktop : IDesktop
         // The window itself, then its owned dialogs and popup menus: a menu opened by a click is a separate window, not part of the tree.
         foreach (var hwnd in WindowsOf(info))
         {
+            if (hwnd != (nint)handle && limit == _maxElements)
+            {
+                // The main window is done: what opened on top of it (menus, dialogs) has a budget of its own.
+                mainTruncated = truncated;
+                truncated = false;
+                limit += 150;
+            }
             if (truncated)
                 break;
             IUIAutomationElement root;
@@ -172,7 +181,7 @@ public sealed class UiaDesktop : IDesktop
             // Some menus are part of the main window's tree already; the popup window would list the same items a second time.
             if (hwnd != (nint)handle && Win32.ClassOf(hwnd) == "#32768" && elements.Any(e => e.Role == "menu"))
                 continue;
-            if (hwnd != (nint)handle && elements.Count < _maxElements)
+            if (hwnd != (nint)handle && elements.Count < limit)
             {
                 var title = Win32.TextOf(hwnd);
                 var id = $"e{elements.Count + 1}";
@@ -192,7 +201,7 @@ public sealed class UiaDesktop : IDesktop
             foreach (var (id, center) in centers)
                 _centers[id] = center;
             _version++;
-            return new Observation(_version, info, elements, truncated);
+            return new Observation(_version, info, elements, truncated || mainTruncated);
         }
     }
 
@@ -338,7 +347,9 @@ public sealed class UiaDesktop : IDesktop
 
     // ---- Acting ----
 
-    public ActionOutcome Perform(long handle, DesktopAction action)
+    public ActionOutcome Perform(long handle, DesktopAction action) => Perform(handle, action, _settle);
+
+    public ActionOutcome Perform(long handle, DesktopAction action, TimeSpan settle)
     {
         var hwnd = (nint)handle;
         if (!Win32.Exists(hwnd))
@@ -371,8 +382,8 @@ public sealed class UiaDesktop : IDesktop
                 outcome = OnElement(hwnd, element, action, center);
             }
 
-            if (outcome.Ok)
-                Thread.Sleep(_settle);
+            if (outcome.Ok && settle > TimeSpan.Zero)
+                Thread.Sleep(settle);
             return outcome;
         }
         catch (System.Runtime.InteropServices.COMException ex)
@@ -417,6 +428,11 @@ public sealed class UiaDesktop : IDesktop
 
         switch (action.Kind)
         {
+            case DesktopActionKind.Invoke when !Flag(element, PropInvoke) && center is { } spot:
+                // Many controls (custom-drawn rows, web content) can be clicked but offer no Invoke pattern: click where they are.
+                Win32.Click(spot.X, spot.Y);
+                return ActionOutcome.Success("clicked (the element has no Invoke pattern)");
+
             case DesktopActionKind.Invoke:
                 // Invoke on a button that opens a modal dialog does not return until the dialog is closed: do not wait for it forever.
                 var invoke = (IUIAutomationInvokePattern)element.GetCurrentPattern(PatternInvoke);

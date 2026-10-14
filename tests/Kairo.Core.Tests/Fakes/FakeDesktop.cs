@@ -22,7 +22,14 @@ internal sealed class FakeDesktop : IDesktop
 
     WindowInfo? IDesktop.Window(long handle) => Window_(handle);
 
-    public Observation Observe(long handle) => new(++_version, Window, [.. Elements], false);
+    /// <summary>Called with the number of the look about to be returned, before the elements are read: lets a test change the screen "in time".</summary>
+    public Action<int>? OnObserve { get; set; }
+
+    public Observation Observe(long handle)
+    {
+        OnObserve?.Invoke(_version + 1);
+        return new(++_version, Window, [.. Elements], false);
+    }
 
     public ActionOutcome Perform(long handle, DesktopAction action)
     {

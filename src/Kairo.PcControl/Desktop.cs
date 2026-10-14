@@ -62,6 +62,46 @@ public sealed record Observation(int Version, WindowInfo Window, IReadOnlyList<U
         return sb.ToString();
     }
 
+    /// <summary>What the element looks like without its number and indentation: the same thing in two looks gives the same text.</summary>
+    public static string Plain(UiElement e) => Line(e with { Id = "", Depth = 0 }).Replace("[] ", "", StringComparison.Ordinal);
+
+    /// <summary>
+    /// What changed between two looks, as the fast model needs it to judge the step it just took: elements that appeared and elements
+    /// that went. Null when the two looks are the same.
+    /// </summary>
+    public static string? Diff(Observation before, Observation after, int max = 8)
+    {
+        if (before.Digest == after.Digest)
+            return null;
+        var counts = new Dictionary<string, int>();
+        foreach (var e in before.Elements)
+            counts[Plain(e)] = counts.GetValueOrDefault(Plain(e)) + 1;
+        var added = new List<string>();
+        foreach (var e in after.Elements)
+        {
+            var key = Plain(e);
+            if (counts.TryGetValue(key, out var n) && n > 0)
+                counts[key] = n - 1;
+            else
+                added.Add(key);
+        }
+        var removed = counts.SelectMany(p => Enumerable.Repeat(p.Key, p.Value)).ToList();
+
+        var sb = new System.Text.StringBuilder();
+        if (before.Window.Title != after.Window.Title)
+            sb.Append("window title: \"").Append(after.Window.Title).Append("\"\n");
+        void List(string sign, List<string> lines)
+        {
+            foreach (var line in lines.Take(max))
+                sb.Append(sign).Append(' ').Append(line.Length > 110 ? line[..110] + "…" : line).Append('\n');
+            if (lines.Count > max)
+                sb.Append(sign).Append(" (and ").Append(lines.Count - max).Append(" more)\n");
+        }
+        List("+", added);
+        List("-", removed);
+        return sb.Length == 0 ? null : sb.ToString(); // only numbering or indentation moved
+    }
+
     public static string Line(UiElement e)
     {
         var sb = new System.Text.StringBuilder();
@@ -165,6 +205,12 @@ public interface IDesktop
 
     /// <summary>Why a program that is not on the user's list may not be started by name (null: it may). Only asked when every program is allowed.</summary>
     string? LaunchRefusal(string name) => null;
+
+    /// <summary>
+    /// Like <see cref="Perform(long, DesktopAction)"/> but waits only <paramref name="settle"/> afterwards: the caller looks again and
+    /// waits for the screen itself, which is quicker than a pause long enough for the slowest app.
+    /// </summary>
+    ActionOutcome Perform(long handle, DesktopAction action, TimeSpan settle) => Perform(handle, action);
 
     /// <summary>A picture of the window as it is on the screen (it is brought to the front first). The returned number names it for ClickAt.</summary>
     Snapshot Capture(long handle);
