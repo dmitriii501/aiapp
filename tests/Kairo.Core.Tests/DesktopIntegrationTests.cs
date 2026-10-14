@@ -70,16 +70,33 @@ public sealed class DesktopIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void An_action_on_an_old_look_is_refused_instead_of_hitting_the_wrong_element()
+    public void An_element_keeps_its_id_from_look_to_look_so_an_old_id_still_hits_the_same_element()
     {
         if (NoDesktop)
             return;
         var window = StartNotepad();
         var old = _desktop.Observe(window.Handle);
         var edit = old.Elements.First(e => e.Can.HasFlag(UiCapability.SetValue));
-        _desktop.Observe(window.Handle); // the screen was looked at again
+        var again = _desktop.Observe(window.Handle); // the screen was looked at again
+        var third = _desktop.Observe(window.Handle);
 
-        var outcome = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.SetValue, old.Version, edit.Id, "x"));
+        Assert.Equal(old.Elements.Select(e => e.Id), again.Elements.Select(e => e.Id));
+        Assert.Equal(old.Elements.Select(e => e.Id), third.Elements.Select(e => e.Id));
+        var outcome = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.SetValue, old.Version, edit.Id, "typed with an id from two looks ago"));
+
+        Assert.True(outcome.Ok, outcome.Message);
+        Assert.Contains(_desktop.Observe(window.Handle).Elements, e => e.Value == "typed with an id from two looks ago");
+    }
+
+    [Fact]
+    public void The_id_of_an_element_that_is_gone_is_refused_instead_of_hitting_another_one()
+    {
+        if (NoDesktop)
+            return;
+        var window = StartNotepad();
+        var look = _desktop.Observe(window.Handle);
+
+        var outcome = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.Invoke, look.Version, "e99999"));
 
         Assert.False(outcome.Ok);
         Assert.Contains("observe again", outcome.Message);

@@ -62,6 +62,46 @@ public sealed record Observation(int Version, WindowInfo Window, IReadOnlyList<U
         return sb.ToString();
     }
 
+    /// <summary>
+    /// What changed between two looks of a window whose ids are stable, by id: new elements (<c>+</c>), elements whose state, value or
+    /// name changed (<c>~</c>) and elements that went (<c>-</c>). Null when nothing differs.
+    /// </summary>
+    public static string? Changes(Observation before, Observation after, int max = 30)
+    {
+        var old = new Dictionary<string, UiElement>();
+        foreach (var e in before.Elements)
+            old[e.Id] = e;
+        var now = new HashSet<string>();
+        var added = new List<string>();
+        var changed = new List<string>();
+        foreach (var e in after.Elements)
+        {
+            now.Add(e.Id);
+            if (!old.TryGetValue(e.Id, out var was))
+                added.Add(Line(e with { Depth = 0 }));
+            else if (Plain(was) != Plain(e))
+                changed.Add(Line(e with { Depth = 0 }));
+        }
+        var removed = before.Elements.Where(e => !now.Contains(e.Id)).Select(e => $"[{e.Id}] {e.Role}" + (e.Name.Length > 0 ? $" \"{e.Name}\"" : "")).ToList();
+        if (added.Count + changed.Count + removed.Count == 0 && before.Window.Title == after.Window.Title)
+            return null;
+
+        var sb = new System.Text.StringBuilder();
+        if (before.Window.Title != after.Window.Title)
+            sb.Append("window title: \"").Append(after.Window.Title).Append("\"\n");
+        void List(string sign, List<string> lines)
+        {
+            foreach (var line in lines.Take(max))
+                sb.Append(sign).Append(' ').Append(line.Length > 160 ? line[..160] + "…" : line).Append('\n');
+            if (lines.Count > max)
+                sb.Append(sign).Append(" (and ").Append(lines.Count - max).Append(" more)\n");
+        }
+        List("+", added);
+        List("~", changed);
+        List("-", removed);
+        return sb.ToString();
+    }
+
     /// <summary>What the element looks like without its number and indentation: the same thing in two looks gives the same text.</summary>
     public static string Plain(UiElement e) => Line(e with { Id = "", Depth = 0 }).Replace("[] ", "", StringComparison.Ordinal);
 
@@ -194,7 +234,10 @@ public interface IDesktop
 
     WindowInfo? Window(long handle);
 
-    /// <summary>Reads the window's tree. Each call is a new version that makes earlier element ids stale.</summary>
+    /// <summary>
+    /// Reads the window's tree. Each call is a new version. An element keeps its id from look to look for as long as it stays where it is
+    /// in the tree; one that moved, was renamed or went has no id in the next look, and acting on its old id fails.
+    /// </summary>
     Observation Observe(long handle);
 
     /// <summary>Does <paramref name="action"/> in the window and returns once the screen has had a moment to react.</summary>

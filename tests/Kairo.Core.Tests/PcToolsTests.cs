@@ -177,22 +177,33 @@ public sealed class PcToolsTests
     }
 
     [Fact]
-    public async Task An_element_id_from_an_old_look_is_refused_with_advice()
+    public async Task An_element_that_is_gone_is_refused_with_advice()
     {
         NotepadLike();
         await Tool("PcObserve").InvokeAsync(Json(new { }), Ctx, default);
-        await Tool("PcObserve").InvokeAsync(Json(new { }), Ctx, default);
+        _desktop.Elements.RemoveAt(1); // the Save button went
 
-        var result = await Tool("PcAct").InvokeAsync(Json(new { action = "invoke", element = "e2", look = 1 }), Ctx, default);
+        var result = await Tool("PcAct").InvokeAsync(Json(new { action = "invoke", element = "e2" }), Ctx, default);
 
         Assert.True(result.IsError);
         Assert.Contains("observe again", result.Content, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task An_id_from_an_earlier_look_still_works_when_the_element_is_there_and_look_is_not_needed()
+    {
+        NotepadLike();
+        await Tool("PcObserve").InvokeAsync(Json(new { }), Ctx, default);
+        await Tool("PcObserve").InvokeAsync(Json(new { }), Ctx, default);
+
+        var result = await Tool("PcAct").InvokeAsync(Json(new { action = "invoke", element = "e2" }), Ctx, default);
+
+        Assert.False(result.IsError, result.Content);
+    }
+
     [Theory]
     [InlineData("{\"action\":\"fly\"}", "Unknown action")]
     [InlineData("{\"action\":\"invoke\"}", "needs an element id")]
-    [InlineData("{\"action\":\"invoke\",\"element\":\"e1\"}", "look is required")]
     [InlineData("{\"action\":\"set_value\",\"element\":\"e1\",\"look\":1}", "needs text")]
     [InlineData("{\"action\":\"hotkey\",\"text\":\"win+r\"}", "hotkey needs text")]
     [InlineData("{\"action\":\"hotkey\"}", "hotkey needs text")]

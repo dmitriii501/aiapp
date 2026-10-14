@@ -34,14 +34,14 @@ internal sealed class FakeDesktop : IDesktop
     public ActionOutcome Perform(long handle, DesktopAction action)
     {
         Performed.Add(action);
-        // Like the real desktop: a click names the latest screenshot; an element id from an older look is refused.
+        // Like the real desktop: a click names the latest screenshot; an element id works while the element is still on the screen.
         if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt)
         {
             if (action.ObservationVersion != _shotId)
                 return ActionOutcome.Fail("that is not the latest screenshot of this window; take a new one with PcScreenshot");
         }
-        else if (action.Kind is not (DesktopActionKind.Hotkey or DesktopActionKind.TypeFocused) && action.ObservationVersion != _version)
-            return ActionOutcome.Fail($"the screen changed since it was read (look {action.ObservationVersion}, latest {_version}); observe again");
+        else if (action.Kind is not (DesktopActionKind.Hotkey or DesktopActionKind.TypeFocused) && Elements.All(e => e.Id != action.ElementId))
+            return ActionOutcome.Fail($"there is no element {action.ElementId} on the screen any more (it went, moved or was renamed); observe again");
         return OnPerform?.Invoke(action) ?? ActionOutcome.Success();
     }
 

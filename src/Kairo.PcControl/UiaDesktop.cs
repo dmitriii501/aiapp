@@ -9,6 +9,27 @@ namespace Kairo.PcControl;
 /// patterns the element offers (Invoke, Value, Toggle…), which does not depend on the resolution or on where things are drawn;
 /// only hotkeys and typing into the focused element use the keyboard.
 /// </summary>
+/// <summary>Ids for the elements of one window: a place in the tree always gets the same id, and an id is never given to two places.</summary>
+internal sealed class IdTable
+{
+    private readonly Dictionary<string, string> _ids = new();
+    private int _next;
+
+    public string IdFor(string signature)
+    {
+        if (!_ids.TryGetValue(signature, out var id))
+            _ids[signature] = id = "e" + (++_next);
+        return id;
+    }
+
+    /// <summary>A window that keeps changing (a feed, a chat) would grow the table without end; start over, which only costs ids.</summary>
+    public void TrimIfLarge()
+    {
+        if (_ids.Count > 20_000)
+            _ids.Clear();
+    }
+}
+
 public sealed class UiaDesktop : IDesktop
 {
     // UIA property and pattern ids (UIAutomationClient.h); named here because the interop enums do not cover all of them.
@@ -35,6 +56,7 @@ public sealed class UiaDesktop : IDesktop
     private readonly object _gate = new();
     private readonly Dictionary<string, IUIAutomationElement> _elements = new();
     private readonly Dictionary<string, (int X, int Y)> _centers = new();
+    private readonly Dictionary<long, IdTable> _tables = new();
     private int _version;
     private int _shotId;
     private (int Id, long Handle, int Left, int Top, int Width, int Height, double Scale)? _shot;
@@ -104,10 +126,14 @@ public sealed class UiaDesktop : IDesktop
         var centers = new Dictionary<string, (int X, int Y)>();
         var clock = Stopwatch.StartNew();
         var truncated = false;
+        IdTable table;
+        lock (_gate)
+            table = _tables.TryGetValue(handle, out var known) ? known : _tables[handle] = new IdTable();
+        table.TrimIfLarge();
         var mainTruncated = false;
         var limit = _maxElements;
 
-        void Walk(IUIAutomationElement parent, int depth)
+        void Walk(IUIAutomationElement parent, int depth, string path, Dictionary<string, int> seen)
         {
             if (truncated)
                 return;
@@ -133,16 +159,26 @@ public sealed class UiaDesktop : IDesktop
                 if (!offscreen)
                 {
                     var next = depth;
-                    if (Describe(child, depth, elements.Count + 1) is { } element)
+                    var (childPath, childSeen) = (path, seen);
+                    if (Describe(child, depth, 0) is { } described)
                     {
+                        // The same element gets the same id in every look: its place in the tree (the names and kinds of the elements
+                        // above it, and which of its identical siblings it is) is what names it. An element that was renamed or moved
+                        // gets a new id, never an old one: a stale id fails instead of landing on something else.
+                        var key = $"{path}/{described.Role}|{described.Name}|{described.AutomationId}";
+                        var nth = seen.GetValueOrDefault(key);
+                        seen[key] = nth + 1;
+                        var signature = $"{key}#{nth}";
+                        var element = described with { Id = table.IdFor(signature) };
                         elements.Add(element);
                         map[element.Id] = child;
                         if (child.CachedBoundingRectangle is { right: > 0, bottom: > 0 } r && r.right > r.left && r.bottom > r.top)
                             centers[element.Id] = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
                         next = depth + 1;
+                        (childPath, childSeen) = (signature, new Dictionary<string, int>());
                     }
                     if (depth < 16)
-                        Walk(child, next);
+                        Walk(child, next, childPath, childSeen);
                 }
 
                 try
@@ -184,12 +220,12 @@ public sealed class UiaDesktop : IDesktop
             if (hwnd != (nint)handle && elements.Count < limit)
             {
                 var title = Win32.TextOf(hwnd);
-                var id = $"e{elements.Count + 1}";
                 var role = Win32.ClassOf(hwnd) == "#32768" ? "popup menu" : "dialog";
+                var id = table.IdFor($"window:{role}:{title}");
                 elements.Add(new UiElement(id, role, title, null, 0, UiCapability.None, true, false, false, false, null, null, null));
                 depth = 1;
             }
-            Walk(root, depth);
+            Walk(root, depth, hwnd == (nint)handle ? "" : $"window:{(Win32.ClassOf(hwnd) == "#32768" ? "popup menu" : "dialog")}:{Win32.TextOf(hwnd)}", new Dictionary<string, int>());
         }
 
         lock (_gate)
@@ -373,10 +409,9 @@ public sealed class UiaDesktop : IDesktop
                 IUIAutomationElement element;
                 lock (_gate)
                 {
-                    if (action.ObservationVersion != _version)
-                        return ActionOutcome.Fail($"the screen changed since it was read (element ids are from look {action.ObservationVersion}, the latest look is {_version}); observe again");
+                    // Ids are stable: one from an earlier look names the same element as long as it is still on screen.
                     if (action.ElementId is null || !_elements.TryGetValue(action.ElementId, out element!))
-                        return ActionOutcome.Fail($"there is no element {action.ElementId} in the latest look");
+                        return ActionOutcome.Fail($"there is no element {action.ElementId} on the screen any more (it went, moved or was renamed); observe again");
                 }
                 (int X, int Y)? center = _centers.TryGetValue(action.ElementId, out var c) ? c : null;
                 outcome = OnElement(hwnd, element, action, center);

@@ -130,6 +130,24 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
         new(Autonomous ? RiskLevel.Exec : RiskLevel.System, process, $"{tool}({summary})");
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, string> _lastDigest = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, Observation> _shown = new();
+
+    /// <summary>Above this many elements a result after an action lists what changed instead of the whole window.</summary>
+    public const int DiffAbove = 80;
+
+    /// <summary>The screen as the model is handed it after a fast run; it counts as shown, so later results are relative to it.</summary>
+    public string ShownText(Observation look)
+    {
+        Shown(look);
+        return "\nThe screen as it is now (look " + look.Version + "; ids are valid for PcAct):\n" + look.ToText();
+    }
+
+    /// <summary>The model has been given this look of the window (whole or as changes): later looks are shown relative to it.</summary>
+    public void Shown(Observation look)
+    {
+        _lastDigest[look.Window.Handle] = look.Digest;
+        _shown[look.Window.Handle] = look;
+    }
 
     /// <summary>The digest of the latest look at the window, or null when it has not been looked at.</summary>
     public string? LastDigest(long handle) => _lastDigest.GetValueOrDefault(handle);
@@ -153,13 +171,30 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
         return look;
     }
 
-    public string Screen(long handle, out Observation observation, string? query = null, Observation? taken = null, int waitedMs = 0)
+    public string Screen(long handle, out Observation observation, string? query = null, Observation? taken = null, int waitedMs = 0, bool allowChangesOnly = false)
     {
         observation = taken ?? Desktop.Observe(handle);
         var unchanged = taken is not null && waitedMs > 0 && _lastDigest.GetValueOrDefault(handle) == observation.Digest;
+        var known = _shown.GetValueOrDefault(handle);
         _lastDigest[handle] = observation.Digest;
-        var text = $"Look {observation.Version}. Use these element ids with PcAct (they are valid until the next look).\n" +
-                   (string.IsNullOrWhiteSpace(query) ? observation.ToText() : Filtered(observation, query));
+
+        // A big window after an action: the ids the model knows still mean the same elements, so only what changed needs saying.
+        string? changesOnly = null;
+        if (allowChangesOnly && known is not null && observation.Elements.Count > DiffAbove && string.IsNullOrWhiteSpace(query))
+        {
+            var changes = Observation.Changes(known, observation) ?? "(nothing in the element list changed)\n";
+            if (changes.Count(c => c == '\n') <= 45)
+                changesOnly = changes;
+        }
+        if (string.IsNullOrWhiteSpace(query))
+            _shown[handle] = observation;
+
+        var text = changesOnly is not null
+            ? $"Look {observation.Version} of {observation.Window.Id} ({observation.Window.Process}, \"{observation.Window.Title}\"): {observation.Elements.Count} elements. " +
+              "Element ids stay the same while the element is where it was, so the ids from your last look still work. What changed since that look:\n" + changesOnly +
+              "(PcObserve lists the whole window; with query it finds one element.)\n"
+            : $"Look {observation.Version}. Element ids stay the same from look to look while the element is where it was; one that moved or went has no id any more.\n" +
+              (string.IsNullOrWhiteSpace(query) ? observation.ToText() : Filtered(observation, query));
         if (unchanged)
             text += $"(the window looks the same as before, even after waiting {waitedMs} ms; the action may have had no effect, or the result is not in the element list)\n";
         if (observation.Elements.Count < 3)
@@ -336,8 +371,7 @@ internal sealed class PcActTool(PcSession session) : ITool
         "PcAct",
         "Does one thing in a window, then returns the new look of the window. action: invoke (click a button or menu item), set_value " +
         "(replace the text of an edit), type_text (type into an element), toggle, expand, collapse, select, scroll_down, scroll_up, focus, " +
-        "or hotkey (ctrl+s, alt+tab…). element is an id from the latest PcObserve/PcAct result and look is that result's number; ids from an " +
-        "older look are refused. type_text without element types into whatever has the keyboard focus (click or focus the field first). " +
+        "or hotkey (ctrl+s, alt+tab…). element is an id from a PcObserve/PcAct result: an element keeps its id from look to look while it stays where it is, so several actions in a row need no look in between; the id of an element that went is refused. type_text without element types into whatever has the keyboard focus (click or focus the field first). " +
         "If the window looks the same right after the action (a page that is loading), the tool waits for it to change before it returns; " +
         "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
         "look = its number) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
@@ -346,7 +380,7 @@ internal sealed class PcActTool(PcSession session) : ITool
             ("x", "integer", "For click_at / double_click_at: x in the screenshot's pixels.", false),
             ("y", "integer", "For click_at / double_click_at: y in the screenshot's pixels.", false),
             ("element", "string", "Element id such as e12 (not for hotkey).", false),
-            ("look", "integer", "The look number the element id comes from.", false),
+            ("look", "integer", "For click_at / double_click_at: the screenshot's number. Not needed for element ids.", false),
             ("text", "string", "The text for set_value and type_text, or the key combination for hotkey.", false),
             ("wait", "number", "Seconds to wait for the window to change after the action (0–10). Default 0.4 for hotkey and invoke, else 0.15.", false),
             ("window", "string", "Window id or program name. Default: the allowed window in front.", false)));
@@ -379,7 +413,7 @@ internal sealed class PcActTool(PcSession session) : ITool
             ? (int)(Math.Clamp(seconds, 0, 10) * 1000)
             : action.Kind is DesktopActionKind.Hotkey or DesktopActionKind.Invoke ? 400 : 150;
         var look = session.LookAfterAction(window.Handle, wait, out var waited);
-        return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _, taken: look, waitedMs: waited)));
+        return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _, taken: look, waitedMs: waited, allowChangesOnly: true)));
     }
 
     private (WindowInfo Window, DesktopAction Action, string Verb) Parse(JsonElement input)
@@ -429,8 +463,7 @@ internal sealed class PcActTool(PcSession session) : ITool
             throw new ToolInputException($"{verb} needs text.");
         if (text is { Length: > 5000 })
             throw new ToolInputException("The text is longer than 5000 characters; set it in parts.");
-        var look = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number from the PcObserve/PcAct result the element id comes from.");
-        return (window, new DesktopAction(kind, look, element, text), verb);
+        return (window, new DesktopAction(kind, ToolInput.OptionalInt(input, "look") ?? 0, element, text), verb);
     }
 }
 
@@ -475,7 +508,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
         var options = session.Options with { MaxSteps = Math.Clamp(ToolInput.OptionalInt(input, "max_steps") ?? session.Options.MaxSteps, 1, 60) };
 
         var report = await new PursueLoop(session.Desktop, session.Guard, model, options).RunAsync(window.Handle, plan, ct).ConfigureAwait(false);
-        return new ToolResult(Describe(report), IsError: report.Status is PursueStatus.Failed);
+        return new ToolResult(Describe(session, report), IsError: report.Status is PursueStatus.Failed);
     }
 
     private static Dictionary<string, string> ReadTexts(JsonElement input)
@@ -492,7 +525,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
         return texts;
     }
 
-    internal static string Describe(PursueReport report)
+    internal static string Describe(PcSession session, PursueReport report)
     {
         var sb = new StringBuilder();
         sb.Append("Result: ").Append(report.Status.ToString().ToLowerInvariant()).Append(" — ").Append(report.Reason).Append('\n');
@@ -506,7 +539,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
         if (report.Pending is not null)
             sb.Append("The fast model wanted: ").Append(report.Pending).Append(". Decide this step yourself (PcAct), or call PcPursue again with a narrower sub-goal.\n");
         if (report.Last is { } last && report.Status != PursueStatus.Done)
-            sb.Append("\nThe screen as it is now (look ").Append(last.Version).Append("; ids are valid for PcAct):\n").Append(last.ToText());
+            sb.Append(session.ShownText(last));
         return sb.ToString();
     }
 }
@@ -549,7 +582,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
 
         await session.WarmAsync(model, ct).ConfigureAwait(false);
         var report = await new PolicyRunner(session.Desktop, session.Guard, model, session.Options).RunAsync(policy, window.Handle, ct).ConfigureAwait(false);
-        return new ToolResult(Describe(report), IsError: report.Status == PursueStatus.Failed);
+        return new ToolResult(Describe(session, report), IsError: report.Status == PursueStatus.Failed);
     }
 
     private PcPolicy Parse(JsonElement input)
@@ -576,7 +609,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
         return parsed.Policy;
     }
 
-    internal static string Describe(PolicyReport report)
+    internal static string Describe(PcSession session, PolicyReport report)
     {
         var sb = new StringBuilder();
         sb.Append("Result: ").Append(report.Status.ToString().ToLowerInvariant()).Append(" — ").Append(report.Reason).Append('\n');
@@ -591,7 +624,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
         if (report.Pending is not null)
             sb.Append("The fast model wanted: ").Append(report.Pending).Append(". Decide this step yourself (PcAct), then continue the remaining steps.\n");
         if (report.Last is { } last && report.Status != PursueStatus.Done)
-            sb.Append("\nThe screen as it is now (look ").Append(last.Version).Append("; ids are valid for PcAct):\n").Append(last.ToText());
+            sb.Append(session.ShownText(last));
         return sb.ToString();
     }
 }
