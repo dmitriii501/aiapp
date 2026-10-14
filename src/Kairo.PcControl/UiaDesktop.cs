@@ -376,6 +376,18 @@ public sealed class UiaDesktop : IDesktop
         if (owner != Win32.ProcessOf(hwnd) && Win32.RealProcess(hwnd, Win32.ProcessOf(hwnd)).Pid != owner)
             return ActionOutcome.Fail("another program is on top at that point; the click was not made");
 
+        if (action.Kind == DesktopActionKind.DragAt)
+        {
+            if (action.X2 is not { } px2 || action.Y2 is not { } py2 || px2 < 0 || py2 < 0 || px2 > s.Width * s.Scale || py2 > s.Height * s.Scale)
+                return ActionOutcome.Fail("the end point is outside the screenshot");
+            var x2 = s.Left + (int)Math.Round(px2 / s.Scale);
+            var y2 = s.Top + (int)Math.Round(py2 / s.Scale);
+            var ownerEnd = Win32.ProcessAt(x2, y2);
+            if (ownerEnd != Win32.ProcessOf(hwnd) && Win32.RealProcess(hwnd, Win32.ProcessOf(hwnd)).Pid != ownerEnd)
+                return ActionOutcome.Fail("another program is on top at the end point; nothing was dragged");
+            Win32.Drag(x, y, x2, y2);
+            return ActionOutcome.Success($"dragged from ({px}, {py}) to ({px2}, {py2})");
+        }
         if (action.Kind == DesktopActionKind.DoubleClickAt)
             Win32.DoubleClick(x, y);
         else
@@ -402,7 +414,7 @@ public sealed class UiaDesktop : IDesktop
             ActionOutcome outcome;
             if (action.Kind == DesktopActionKind.Hotkey)
                 outcome = Hotkey(hwnd, action.Text ?? "");
-            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt)
+            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt)
                 outcome = AtPoint(handle, hwnd, action);
             else if (action.Kind == DesktopActionKind.TypeFocused)
                 outcome = TypeFocused(hwnd, action.Text);

@@ -38,6 +38,31 @@ public sealed class PcActWaitTests
     }
 
     [Fact]
+    public async Task An_action_that_closes_the_window_is_a_success_not_a_failure()
+    {
+        _desktop.Elements = [El("e1", "button", "Close", UiCapability.Invoke)];
+        var tools = Tools();
+        await Tool(tools, "PcObserve").InvokeAsync(Json(new { }), Ctx, default);
+        var closed = false;
+        _desktop.OnPerform = _ =>
+        {
+            closed = true;
+            return ActionOutcome.Success("invoked");
+        };
+        _desktop.OnObserve = _ =>
+        {
+            if (closed)
+                throw new InvalidOperationException("The window is gone.");
+        };
+
+        var result = await Tool(tools, "PcAct").InvokeAsync(Json(new { action = "invoke", element = "e1" }), Ctx, default);
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Contains("invoked", result.Content);
+        Assert.Contains("closed it", result.Content);
+    }
+
+    [Fact]
     public void Typing_without_an_element_and_without_text_is_explained()
     {
         var ex = Assert.Throws<ToolInputException>(() => Tool(Tools(), "PcAct").Assess(Json(new { action = "type_text" }), Ctx));

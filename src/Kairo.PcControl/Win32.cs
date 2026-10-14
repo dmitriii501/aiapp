@@ -116,6 +116,21 @@ internal static unsafe partial class Win32
         mouse_event(0x4, 0, 0, 0, 0); // left up
     }
 
+    /// <summary>Presses the left button at one screen point, moves to another in small steps (apps ignore a jump) and lets go.</summary>
+    public static void Drag(int x1, int y1, int x2, int y2)
+    {
+        SetCursorPos(x1, y1);
+        Thread.Sleep(30);
+        mouse_event(0x2, 0, 0, 0, 0); // left down
+        const int steps = 12;
+        for (var i = 1; i <= steps; i++)
+        {
+            SetCursorPos(x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps);
+            Thread.Sleep(12);
+        }
+        mouse_event(0x4, 0, 0, 0, 0); // left up
+    }
+
     /// <summary>The program that owns the top-level window under a screen point, or 0.</summary>
     public static int ProcessAt(int x, int y)
     {

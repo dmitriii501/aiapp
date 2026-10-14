@@ -216,6 +216,8 @@ public enum DesktopActionKind
     /// <summary>A click at a point of a screenshot (<c>X</c>, <c>Y</c> in the picture's pixels). For what the tree does not show; needs a vision model.</summary>
     ClickAt,
     DoubleClickAt,
+    /// <summary>Presses at (<c>X</c>, <c>Y</c>) of a screenshot, moves to (<c>X2</c>, <c>Y2</c>) and lets go: a shape in a paint program, a selection, a slider.</summary>
+    DragAt,
     /// <summary>Types into whatever has the keyboard focus (after a ClickAt put it somewhere).</summary>
     TypeFocused,
 }
@@ -223,12 +225,13 @@ public enum DesktopActionKind
 /// <param name="ObservationVersion">The observation the element id comes from (for ClickAt, the screenshot number); a newer one makes the id invalid.</param>
 /// <param name="ElementId">The element of that observation (null for a hotkey or a click at a point).</param>
 /// <param name="Text">The text to set or type, or the key combination such as <c>ctrl+s</c>.</param>
-public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersion, string? ElementId = null, string? Text = null, int? X = null, int? Y = null)
+public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersion, string? ElementId = null, string? Text = null, int? X = null, int? Y = null, int? X2 = null, int? Y2 = null)
 {
     public override string ToString() => Kind switch
     {
         DesktopActionKind.Hotkey => $"hotkey {Text}",
         DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt => $"{Kind} ({X}, {Y}) in screenshot {ObservationVersion}",
+        DesktopActionKind.DragAt => $"DragAt ({X}, {Y}) to ({X2}, {Y2}) in screenshot {ObservationVersion}",
         DesktopActionKind.TypeFocused => $"type into the focused element \"{Text}\"",
         DesktopActionKind.SetValue or DesktopActionKind.TypeText => $"{Kind} {ElementId} \"{Text}\"",
         _ => ElementId is null ? Kind.ToString() : $"{Kind} {ElementId}",

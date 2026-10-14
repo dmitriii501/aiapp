@@ -49,6 +49,24 @@ public sealed class TimelineTests : IDisposable
     }
 
     [Fact]
+    public void Compaction_is_the_models_time_not_the_users()
+    {
+        var summary = User(ChatMessage.SummaryOpen + " what happened " + ChatMessage.SummaryClose);
+
+        var report = Timeline.Build(
+        [
+            At(1, 0, User("go")),
+            At(2, 5, Assistant("PcAct")),
+            At(3, 6, Results("c0")),
+            At(4, 50, summary),                 // 44 s of the model summarizing
+            At(5, 55, Assistant()),
+        ]);
+
+        Assert.Equal(TimeSpan.Zero, report.User);
+        Assert.Equal(TimeSpan.FromSeconds(5 + 44 + 5), report.Model);
+    }
+
+    [Fact]
     public void The_longest_stretches_come_first_and_say_what_they_were()
     {
         var report = Timeline.Build(

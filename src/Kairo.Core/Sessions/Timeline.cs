@@ -59,6 +59,11 @@ public static class Timeline
                 {
                     intervals.Add(new Interval(message.Seq, TimeKind.Model, length, "the model answered"));
                 }
+                else if (message.Message.IsSummary)
+                {
+                    // Compaction is stored as a user message, but the model wrote it: the gap before it is the model summarizing.
+                    intervals.Add(new Interval(message.Seq, TimeKind.Model, length, "the model summarized the context"));
+                }
                 else if (message.Message.Parts.OfType<ToolResultPart>().Any() && calls.Count > 0)
                 {
                     var each = length / calls.Count;

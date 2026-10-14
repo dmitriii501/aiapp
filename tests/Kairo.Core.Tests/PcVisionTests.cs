@@ -89,6 +89,29 @@ public sealed class PcVisionTests
     }
 
     [Fact]
+    public async Task A_drag_names_both_points_of_the_screenshot_and_returns_the_new_picture()
+    {
+        var tools = Tools(true);
+        await Tool(tools, "PcScreenshot").InvokeAsync(Json(new { }), Ctx, default);
+
+        var result = await Tool(tools, "PcAct").InvokeAsync(Json(new { action = "drag_at", x = 10, y = 20, x2 = 90, y2 = 60, look = 1 }), Ctx, default);
+
+        Assert.False(result.IsError, result.Content);
+        var action = Assert.Single(_desktop.Performed);
+        Assert.Equal((DesktopActionKind.DragAt, 1, 10, 20, 90, 60), (action.Kind, action.ObservationVersion, action.X, action.Y, action.X2, action.Y2));
+        Assert.Contains("Screenshot 2", result.Content);
+    }
+
+    [Fact]
+    public void A_drag_without_an_end_point_is_explained_and_needs_vision()
+    {
+        var ex = Assert.Throws<ToolInputException>(() => Tool(Tools(true), "PcAct").Assess(Json(new { action = "drag_at", x = 1, y = 1, look = 1 }), Ctx));
+        Assert.Contains("x2 and y2", ex.Message);
+
+        Assert.Throws<ToolInputException>(() => Tool(Tools(false), "PcAct").Assess(Json(new { action = "drag_at", x = 1, y = 1, x2 = 2, y2 = 2, look = 1 }), Ctx));
+    }
+
+    [Fact]
     public async Task A_click_on_an_old_screenshot_is_refused_with_advice()
     {
         var tools = Tools(true);

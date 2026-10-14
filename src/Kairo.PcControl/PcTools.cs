@@ -150,7 +150,7 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, Observation> _shown = new();
 
     /// <summary>Above this many elements a result after an action lists what changed instead of the whole window.</summary>
-    public const int DiffAbove = 80;
+    public const int DiffAbove = 40;
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, ulong> _lastShot = new();
 
@@ -446,10 +446,10 @@ internal sealed class PcActTool(PcSession session) : ITool
         ["type_text"] = DesktopActionKind.TypeText, ["toggle"] = DesktopActionKind.Toggle, ["expand"] = DesktopActionKind.Expand,
         ["collapse"] = DesktopActionKind.Collapse, ["select"] = DesktopActionKind.Select, ["scroll_down"] = DesktopActionKind.ScrollDown,
         ["scroll_up"] = DesktopActionKind.ScrollUp, ["focus"] = DesktopActionKind.Focus, ["hotkey"] = DesktopActionKind.Hotkey,
-        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["type_focused"] = DesktopActionKind.TypeFocused,
+        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["drag_at"] = DesktopActionKind.DragAt, ["type_focused"] = DesktopActionKind.TypeFocused,
     };
 
-    private static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.TypeFocused;
+    private static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.TypeFocused;
 
     public ToolSpec Spec { get; } = new(
         "PcAct",
@@ -459,11 +459,13 @@ internal sealed class PcActTool(PcSession session) : ITool
         "If the window looks the same right after the action (a page that is loading), the tool waits for it to change before it returns; " +
         "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. A click_at waits the same way " +
         "(until the picture or the element list changes) and then returns the new picture, so a page that opens after the click is what you see. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
-        "look = its number) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
+        "look = its number), drag_at (press at x, y, move to x2, y2, let go: draw a shape, select, move a slider) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
         ToolInput.Schema(
-            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at or type_focused.", true),
+            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at, drag_at or type_focused.", true),
             ("x", "integer", "For click_at / double_click_at: x in the screenshot's pixels.", false),
             ("y", "integer", "For click_at / double_click_at: y in the screenshot's pixels.", false),
+            ("x2", "integer", "For drag_at: where the drag ends, x in the screenshot's pixels.", false),
+            ("y2", "integer", "For drag_at: where the drag ends, y in the screenshot's pixels.", false),
             ("element", "string", "Element id such as e12 (not for hotkey).", false),
             ("look", "integer", "For click_at / double_click_at: the screenshot's number. Not needed for element ids.", false),
             ("text", "string", "The text for set_value and type_text, or the key combination for hotkey.", false),
@@ -504,7 +506,7 @@ internal sealed class PcActTool(PcSession session) : ITool
             }
             catch (InvalidOperationException ex)
             {
-                return Task.FromResult(ToolResult.Error(ex.Message));
+                return Task.FromResult(WindowGone(head, ex));
             }
             var note = pictureChanged ? "" : $" The picture looks the same as before the action, even after waiting {pixelWaited} ms: it may have had no effect, or the page is still loading (use wait).";
             var shot = PcScreenshotTool.Take(session, window, head, after, note);
@@ -513,9 +515,24 @@ internal sealed class PcActTool(PcSession session) : ITool
         var wait = ToolInput.OptionalNumber(input, "wait") is { } seconds
             ? (int)(Math.Clamp(seconds, 0, 10) * 1000)
             : action.Kind is DesktopActionKind.Hotkey or DesktopActionKind.Invoke ? 400 : 150;
-        var look = session.LookAfterAction(window.Handle, wait, out var waited);
+        Observation look;
+        int waited;
+        try
+        {
+            look = session.LookAfterAction(window.Handle, wait, out waited);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Task.FromResult(WindowGone(head, ex));
+        }
         return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _, taken: look, waitedMs: waited, allowChangesOnly: true)));
     }
+
+    /// <summary>The action went through and then the window was no longer there: closing a window or quitting a program is this, not a failure.</summary>
+    private static ToolResult WindowGone(string head, InvalidOperationException ex) =>
+        ex.Message.Contains("gone", StringComparison.OrdinalIgnoreCase)
+            ? new ToolResult(head + "The window is gone now: the action closed it (or the program quit). Nothing more to look at; PcWindows lists what is open.")
+            : ToolResult.Error(ex.Message);
 
     private (WindowInfo Window, DesktopAction Action, string Verb) Parse(JsonElement input)
     {
@@ -533,11 +550,17 @@ internal sealed class PcActTool(PcSession session) : ITool
             return (window, new DesktopAction(kind, ToolInput.OptionalInt(input, "look") ?? 0, null, text.Trim().ToLowerInvariant()), verb);
         }
 
-        if (kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt)
+        if (kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt)
         {
             var shot = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number of the PcScreenshot the point comes from.");
             if (ToolInput.OptionalInt(input, "x") is not { } x || ToolInput.OptionalInt(input, "y") is not { } y)
                 throw new ToolInputException($"{verb} needs x and y: pixels of the screenshot.");
+            if (kind == DesktopActionKind.DragAt)
+            {
+                if (ToolInput.OptionalInt(input, "x2") is not { } x2 || ToolInput.OptionalInt(input, "y2") is not { } y2)
+                    throw new ToolInputException("drag_at needs x2 and y2: where the drag ends, in the same screenshot's pixels.");
+                return (window, new DesktopAction(kind, shot, null, null, x, y, x2, y2), verb);
+            }
             return (window, new DesktopAction(kind, shot, null, null, x, y), verb);
         }
         if (kind == DesktopActionKind.TypeFocused)
