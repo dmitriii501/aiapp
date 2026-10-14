@@ -103,6 +103,31 @@ public sealed class PcVisionTests
     }
 
     [Fact]
+    public async Task A_path_is_one_stroke_through_all_the_points_and_returns_the_new_picture()
+    {
+        var tools = Tools(true);
+        await Tool(tools, "PcScreenshot").InvokeAsync(Json(new { }), Ctx, default);
+
+        var result = await Tool(tools, "PcAct").InvokeAsync(Json(new { action = "drag_path", look = 1, points = "10,20 50,40 90,20 90,60" }), Ctx, default);
+
+        Assert.False(result.IsError, result.Content);
+        var action = Assert.Single(_desktop.Performed);
+        Assert.Equal(DesktopActionKind.DragPath, action.Kind);
+        Assert.Equal([(10, 20), (50, 40), (90, 20), (90, 60)], action.Path);
+        Assert.Contains("Screenshot 2", result.Content);
+    }
+
+    [Theory]
+    [InlineData("10,20")]
+    [InlineData("10,20 30")]
+    [InlineData("")]
+    public void A_path_with_fewer_than_two_points_is_explained(string points)
+    {
+        var ex = Assert.Throws<ToolInputException>(() => Tool(Tools(true), "PcAct").Assess(Json(new { action = "drag_path", look = 1, points }), Ctx));
+        Assert.Contains("drag_path needs points", ex.Message);
+    }
+
+    [Fact]
     public void A_drag_without_an_end_point_is_explained_and_needs_vision()
     {
         var ex = Assert.Throws<ToolInputException>(() => Tool(Tools(true), "PcAct").Assess(Json(new { action = "drag_at", x = 1, y = 1, look = 1 }), Ctx));

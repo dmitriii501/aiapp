@@ -35,7 +35,7 @@ internal sealed class FakeDesktop : IDesktop
     {
         Performed.Add(action);
         // Like the real desktop: a click names the latest screenshot; an element id works while the element is still on the screen.
-        if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt)
+        if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath)
         {
             if (action.ObservationVersion != _shotId)
                 return ActionOutcome.Fail("that is not the latest screenshot of this window; take a new one with PcScreenshot");

@@ -218,6 +218,8 @@ public enum DesktopActionKind
     DoubleClickAt,
     /// <summary>Presses at (<c>X</c>, <c>Y</c>) of a screenshot, moves to (<c>X2</c>, <c>Y2</c>) and lets go: a shape in a paint program, a selection, a slider.</summary>
     DragAt,
+    /// <summary>Presses at the first of <c>Path</c>'s points of a screenshot, moves through all of them in order and lets go at the last: a whole figure or a curve in one stroke.</summary>
+    DragPath,
     /// <summary>Types into whatever has the keyboard focus (after a ClickAt put it somewhere).</summary>
     TypeFocused,
 }
@@ -225,12 +227,13 @@ public enum DesktopActionKind
 /// <param name="ObservationVersion">The observation the element id comes from (for ClickAt, the screenshot number); a newer one makes the id invalid.</param>
 /// <param name="ElementId">The element of that observation (null for a hotkey or a click at a point).</param>
 /// <param name="Text">The text to set or type, or the key combination such as <c>ctrl+s</c>.</param>
-public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersion, string? ElementId = null, string? Text = null, int? X = null, int? Y = null, int? X2 = null, int? Y2 = null)
+public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersion, string? ElementId = null, string? Text = null, int? X = null, int? Y = null, int? X2 = null, int? Y2 = null, IReadOnlyList<(int X, int Y)>? Path = null)
 {
     public override string ToString() => Kind switch
     {
         DesktopActionKind.Hotkey => $"hotkey {Text}",
         DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt => $"{Kind} ({X}, {Y}) in screenshot {ObservationVersion}",
+        DesktopActionKind.DragPath => $"DragPath through {Path?.Count ?? 0} points in screenshot {ObservationVersion}",
         DesktopActionKind.DragAt => $"DragAt ({X}, {Y}) to ({X2}, {Y2}) in screenshot {ObservationVersion}",
         DesktopActionKind.TypeFocused => $"type into the focused element \"{Text}\"",
         DesktopActionKind.SetValue or DesktopActionKind.TypeText => $"{Kind} {ElementId} \"{Text}\"",

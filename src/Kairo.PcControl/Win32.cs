@@ -131,6 +131,26 @@ internal static unsafe partial class Win32
         mouse_event(0x4, 0, 0, 0, 0); // left up
     }
 
+    /// <summary>One stroke with the left button held: down at the first point, through the others in small steps, up at the last.</summary>
+    public static void DragPath(IReadOnlyList<(int X, int Y)> points)
+    {
+        SetCursorPos(points[0].X, points[0].Y);
+        Thread.Sleep(30);
+        mouse_event(0x2, 0, 0, 0, 0); // left down
+        for (var i = 1; i < points.Count; i++)
+        {
+            var (x1, y1) = points[i - 1];
+            var (x2, y2) = points[i];
+            var steps = Math.Max(1, (int)(Math.Sqrt((double)(x2 - x1) * (x2 - x1) + (double)(y2 - y1) * (y2 - y1)) / 8));
+            for (var s = 1; s <= steps; s++)
+            {
+                SetCursorPos(x1 + (x2 - x1) * s / steps, y1 + (y2 - y1) * s / steps);
+                Thread.Sleep(5);
+            }
+        }
+        mouse_event(0x4, 0, 0, 0, 0); // left up
+    }
+
     /// <summary>The program that owns the top-level window under a screen point, or 0.</summary>
     public static int ProcessAt(int x, int y)
     {

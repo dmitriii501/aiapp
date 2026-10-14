@@ -446,10 +446,10 @@ internal sealed class PcActTool(PcSession session) : ITool
         ["type_text"] = DesktopActionKind.TypeText, ["toggle"] = DesktopActionKind.Toggle, ["expand"] = DesktopActionKind.Expand,
         ["collapse"] = DesktopActionKind.Collapse, ["select"] = DesktopActionKind.Select, ["scroll_down"] = DesktopActionKind.ScrollDown,
         ["scroll_up"] = DesktopActionKind.ScrollUp, ["focus"] = DesktopActionKind.Focus, ["hotkey"] = DesktopActionKind.Hotkey,
-        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["drag_at"] = DesktopActionKind.DragAt, ["type_focused"] = DesktopActionKind.TypeFocused,
+        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["drag_at"] = DesktopActionKind.DragAt, ["drag_path"] = DesktopActionKind.DragPath, ["type_focused"] = DesktopActionKind.TypeFocused,
     };
 
-    private static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.TypeFocused;
+    private static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath or DesktopActionKind.TypeFocused;
 
     public ToolSpec Spec { get; } = new(
         "PcAct",
@@ -459,11 +459,13 @@ internal sealed class PcActTool(PcSession session) : ITool
         "If the window looks the same right after the action (a page that is loading), the tool waits for it to change before it returns; " +
         "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. A click_at waits the same way " +
         "(until the picture or the element list changes) and then returns the new picture, so a page that opens after the click is what you see. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
-        "look = its number), drag_at (press at x, y, move to x2, y2, let go: draw a shape, select, move a slider) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
+        "look = its number), drag_at (press at x, y, move to x2, y2, let go: draw a line, select, move a slider), drag_path (one stroke through many points, points = 'x,y x,y x,y …': a whole figure or curve in one call, one undo step) and type_focused (text into whatever has the focus) work where the tree shows nothing. " +
+        "In a drawing program the active tool decides what a drag does (a selection tool only selects): check the tool in the element list or the picture before drawing, and look at the picture after the first stroke before you repeat it.",
         ToolInput.Schema(
-            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at, drag_at or type_focused.", true),
+            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at, drag_at, drag_path or type_focused.", true),
             ("x", "integer", "For click_at / double_click_at: x in the screenshot's pixels.", false),
             ("y", "integer", "For click_at / double_click_at: y in the screenshot's pixels.", false),
+            ("points", "string", "For drag_path: the points of one stroke in the screenshot's pixels, \"x,y x,y x,y\" (2 to 300 points, in order; the button is held from the first to the last).", false),
             ("x2", "integer", "For drag_at: where the drag ends, x in the screenshot's pixels.", false),
             ("y2", "integer", "For drag_at: where the drag ends, y in the screenshot's pixels.", false),
             ("element", "string", "Element id such as e12 (not for hotkey).", false),
@@ -550,6 +552,17 @@ internal sealed class PcActTool(PcSession session) : ITool
             return (window, new DesktopAction(kind, ToolInput.OptionalInt(input, "look") ?? 0, null, text.Trim().ToLowerInvariant()), verb);
         }
 
+        if (kind == DesktopActionKind.DragPath)
+        {
+            var look = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number of the PcScreenshot the points come from.");
+            var numbers = System.Text.RegularExpressions.Regex.Matches(ToolInput.OptionalString(input, "points") ?? "", "-?[0-9]+").Select(m => int.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+            if (numbers.Count < 4 || numbers.Count % 2 != 0)
+                throw new ToolInputException("drag_path needs points: pairs of x,y such as \"100,200 150,260 220,300\" (at least two points).");
+            if (numbers.Count > 600)
+                throw new ToolInputException("drag_path takes at most 300 points; use fewer or split the figure into several strokes.");
+            var path = Enumerable.Range(0, numbers.Count / 2).Select(i => (numbers[2 * i], numbers[2 * i + 1])).ToList();
+            return (window, new DesktopAction(kind, look, null, null, path[0].Item1, path[0].Item2, path[^1].Item1, path[^1].Item2, path), verb);
+        }
         if (kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt)
         {
             var shot = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number of the PcScreenshot the point comes from.");

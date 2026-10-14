@@ -376,6 +376,25 @@ public sealed class UiaDesktop : IDesktop
         if (owner != Win32.ProcessOf(hwnd) && Win32.RealProcess(hwnd, Win32.ProcessOf(hwnd)).Pid != owner)
             return ActionOutcome.Fail("another program is on top at that point; the click was not made");
 
+        if (action.Kind == DesktopActionKind.DragPath)
+        {
+            var screen = new List<(int X, int Y)>();
+            foreach (var (qx, qy) in action.Path ?? [])
+            {
+                if (qx < 0 || qy < 0 || qx > s.Width * s.Scale || qy > s.Height * s.Scale)
+                    return ActionOutcome.Fail($"the point ({qx}, {qy}) is outside the screenshot");
+                var sx = s.Left + (int)Math.Round(qx / s.Scale);
+                var sy = s.Top + (int)Math.Round(qy / s.Scale);
+                var ownerHere = Win32.ProcessAt(sx, sy);
+                if (ownerHere != Win32.ProcessOf(hwnd) && Win32.RealProcess(hwnd, Win32.ProcessOf(hwnd)).Pid != ownerHere)
+                    return ActionOutcome.Fail($"another program is on top at the point ({qx}, {qy}); nothing was dragged");
+                screen.Add((sx, sy));
+            }
+            if (screen.Count < 2)
+                return ActionOutcome.Fail("a path needs at least two points");
+            Win32.DragPath(screen);
+            return ActionOutcome.Success($"dragged through {screen.Count} points");
+        }
         if (action.Kind == DesktopActionKind.DragAt)
         {
             if (action.X2 is not { } px2 || action.Y2 is not { } py2 || px2 < 0 || py2 < 0 || px2 > s.Width * s.Scale || py2 > s.Height * s.Scale)
@@ -414,7 +433,7 @@ public sealed class UiaDesktop : IDesktop
             ActionOutcome outcome;
             if (action.Kind == DesktopActionKind.Hotkey)
                 outcome = Hotkey(hwnd, action.Text ?? "");
-            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt)
+            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.DragAt or DesktopActionKind.DragPath)
                 outcome = AtPoint(handle, hwnd, action);
             else if (action.Kind == DesktopActionKind.TypeFocused)
                 outcome = TypeFocused(hwnd, action.Text);
