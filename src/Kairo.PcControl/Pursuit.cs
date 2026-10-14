@@ -117,7 +117,7 @@ public static class Candidates
 /// the step is safe, look again. One model request per step. Whatever it is unsure of, whatever is risky and whatever does not work
 /// goes back to the big model with the screen as it is.
 /// </summary>
-public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel model, PursueOptions? options = null)
+public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel model, PursueOptions? options = null, ReflexSet? reflexes = null)
 {
     private readonly PursueOptions _options = options ?? new PursueOptions();
 
@@ -163,6 +163,19 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             if (stalled >= _options.StallLimit)
                 return Finish(PursueStatus.Stuck, $"the screen did not change in {stalled} steps");
 
+            // Reflexes first: a window the policy already knows how to answer needs no model at all.
+            if (reflexes?.Match(observation) is { } hit)
+            {
+                clock.Restart();
+                digestBeforeAction = observation.Digest;
+                var reflexOutcome = SafePerform(window, hit.Action);
+                var reflexStep = new PursueStep(number, $"reflex {hit.Reflex.Name}: {hit.Action}", 1.0, observeMs, 0, clock.ElapsedMilliseconds, reflexOutcome.Ok, reflexOutcome.Message);
+                steps.Add(reflexStep);
+                onStep?.Invoke(reflexStep);
+                previous = null;
+                continue;
+            }
+
             var candidates = Candidates.Build(observation, plan);
             if (candidates.Count <= 2 && observation.Elements.Count == 0)
                 return Finish(PursueStatus.Escalated, "the window has no elements UI Automation can see (the app needs a vision step)");
@@ -172,6 +185,11 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             try
             {
                 decision = await model.DecideAsync(Request(observation, plan, candidates, previous), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Stopping while the fast model is still thinking is an ordinary way for a run to end.
+                return Finish(PursueStatus.Aborted, "cancelled");
             }
             catch (DecisionException ex)
             {
@@ -234,15 +252,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
 
             clock.Restart();
             digestBeforeAction = observation.Digest;
-            ActionOutcome outcome;
-            try
-            {
-                outcome = desktop.Perform(window, picked.Action!);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                outcome = ActionOutcome.Fail(ex.Message);
-            }
+            var outcome = SafePerform(window, picked.Action!);
             var actMs = clock.ElapsedMilliseconds;
 
             if (!outcome.Ok)
@@ -260,6 +270,18 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
         }
 
         return Finish(PursueStatus.StepLimit, $"{_options.MaxSteps} steps without reaching the goal");
+    }
+
+    private ActionOutcome SafePerform(long window, DesktopAction action)
+    {
+        try
+        {
+            return desktop.Perform(window, action);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ActionOutcome.Fail(ex.Message);
+        }
     }
 
     private static DecisionRequest Request(Observation observation, PursuePlan plan, List<Candidate> candidates, string? previous)

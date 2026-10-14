@@ -40,7 +40,7 @@ public static class PcTools
             new PcGuard(config.PcApps),
             decisionModel,
             new PursueOptions(MaxSteps: config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7));
-        return [new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session)];
+        return [new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session)];
     }
 }
 
@@ -302,6 +302,89 @@ internal sealed class PcPursueTool(PcSession session) : ITool
         }
         if (report.Pending is not null)
             sb.Append("The fast model wanted: ").Append(report.Pending).Append(". Decide this step yourself (PcAct), or call PcPursue again with a narrower sub-goal.\n");
+        if (report.Last is { } last && report.Status != PursueStatus.Done)
+            sb.Append("\nThe screen as it is now (look ").Append(last.Version).Append("; ids are valid for PcAct):\n").Append(last.ToText());
+        return sb.ToString();
+    }
+}
+
+internal sealed class PcRunPolicyTool(PcSession session) : ITool
+{
+    public ToolSpec Spec { get; } = new(
+        "PcRunPolicy",
+        "Compile a whole routine job into a policy and let the fast model carry it out without you: use it for a task of several sub-goals " +
+        "(open a dialog, fill it from prepared texts, confirm, save). The user sees the whole policy before it runs. It is data, not code:\n" +
+        "{ \"goal\": \"...\", \"target\": {\"app\": \"notepad.exe\"}, \"texts\": {\"name\": \"report.txt\"}, " +
+        "\"steps\": [ {\"id\": \"open\", \"goal\": \"Open the Save As dialog\", \"until\": \"A Save As dialog is open\", \"hotkeys\": [\"ctrl+shift+s\"]}, " +
+        "{\"id\": \"name\", \"goal\": \"Type the file name and save\", \"until\": \"The title shows report.txt\", \"texts\": [\"name\"], \"hotkeys\": [\"enter\"]} ], " +
+        "\"reflexes\": [ {\"name\": \"keep\", \"when\": {\"window_title_contains\": \"Confirm\", \"element\": {\"role\": \"button\", \"name_contains\": \"Yes\"}}, \"do\": {\"invoke\": {\"role\": \"button\", \"name_contains\": \"Yes\"}}} ], " +
+        "\"limits\": {\"max_steps\": 60, \"max_seconds\": 120} }. " +
+        "A step needs goal and until (how the screen looks when it is done); texts and hotkeys name only what the fast model may type or press. " +
+        "A reflex answers a window you already know (invoke an element found by role/name, or a hotkey) with no model call and no delay; the user " +
+        "approves reflexes with the policy, so only put a risky click there when you mean it. Without reflexes the fast model still hands back " +
+        "anything unsure or hard to undo. The run stops at the first step that does not finish and returns the screen: continue from there with PcAct. " +
+        "Needs a Jev key and a program from the allowed list.",
+        ToolInput.Schema(
+            ("policy", "object", "The policy (kairo.policy/v0), as described above.", true),
+            ("window", "string", "Window id or program name. Default: the policy's program.", false)));
+
+    public ToolAssessment Assess(JsonElement input, ToolContext ctx)
+    {
+        var policy = Parse(input);
+        var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? policy.App);
+        var goal = policy.Goal.ReplaceLineEndings(" ");
+        return new ToolAssessment(RiskLevel.System, window.Process, $"PcRunPolicy({window.Process}: {(goal.Length > 100 ? goal[..100] + "…" : goal)})", policy.Describe());
+    }
+
+    public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
+    {
+        var policy = Parse(input);
+        var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? policy.App);
+        if (session.DecisionModel() is not { } model)
+            return ToolResult.Error("The fast decision model is not set up (no Jev key). Use PcObserve and PcAct to do it step by step.");
+
+        var report = await new PolicyRunner(session.Desktop, session.Guard, model, session.Options).RunAsync(policy, window.Handle, ct).ConfigureAwait(false);
+        return new ToolResult(Describe(report), IsError: report.Status == PursueStatus.Failed);
+    }
+
+    private PcPolicy Parse(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty("policy", out var raw))
+            throw new ToolInputException("policy is required.");
+        // Models often send the object as a string of JSON; accept both.
+        var json = raw;
+        if (raw.ValueKind == JsonValueKind.String)
+        {
+            try
+            {
+                json = JsonDocument.Parse(raw.GetString() ?? "").RootElement.Clone();
+            }
+            catch (JsonException ex)
+            {
+                throw new ToolInputException($"policy is a string that is not valid JSON: {ex.Message}");
+            }
+        }
+
+        var parsed = PolicyParser.Parse(json, session.Guard);
+        if (parsed.Policy is null)
+            throw new ToolInputException("The policy is not valid:\n- " + string.Join("\n- ", parsed.Errors));
+        return parsed.Policy;
+    }
+
+    internal static string Describe(PolicyReport report)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Result: ").Append(report.Status.ToString().ToLowerInvariant()).Append(" — ").Append(report.Reason).Append('\n');
+        sb.Append(report.Completed).Append('/').Append(report.Total).Append(" step(s) done, ").Append(report.ReflexFires).Append(" reflex firing(s), ")
+          .Append(report.ElapsedMs).Append(" ms in all.\n");
+        foreach (var s in report.Steps)
+        {
+            var actions = s.Report.Steps.Count(x => x.Executed);
+            sb.Append("- [").Append(s.Id).Append("] ").Append(s.Goal).Append(": ").Append(s.Report.Status.ToString().ToLowerInvariant())
+              .Append(" (").Append(actions).Append(" action(s), ").Append(s.Report.TotalMs).Append(" ms)\n");
+        }
+        if (report.Pending is not null)
+            sb.Append("The fast model wanted: ").Append(report.Pending).Append(". Decide this step yourself (PcAct), then continue the remaining steps.\n");
         if (report.Last is { } last && report.Status != PursueStatus.Done)
             sb.Append("\nThe screen as it is now (look ").Append(last.Version).Append("; ids are valid for PcAct):\n").Append(last.ToText());
         return sb.ToString();

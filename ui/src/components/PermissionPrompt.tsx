@@ -10,7 +10,7 @@ const TITLES: Record<string, string> = {
   exec: "Команда",
   read: "Чтение файла",
   network: "Сетевой доступ",
-  system: "Действие в системе",
+  system: "Управление ПК",
   plan: "План",
 };
 
@@ -74,6 +74,11 @@ export function PermissionPrompt({ prompt }: { prompt: Prompt }) {
         <div className="permission__plan">
           <Markdown text={prompt.detail ?? ""} />
         </div>
+      ) : prompt.risk === "system" ? (
+        <>
+          <pre className="permission__subject">{prompt.summary}</pre>
+          {prompt.detail && <pre className="permission__subject permission__subject--detail">{prompt.detail}</pre>}
+        </>
       ) : prompt.diff ? (
         <>
           <div className="permission__file">

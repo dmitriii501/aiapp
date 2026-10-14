@@ -1317,6 +1317,13 @@ select.input {
   font-size: 12px;
 }
 
+.permission__subject--detail {
+  margin-top: 6px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .statusbar__item--pc {
   color: #fff;
   background: var(--error);

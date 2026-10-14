@@ -159,7 +159,7 @@ export interface PermissionPrompt {
   reason: string;
   /** Unified diff of what the call would change, when it is a write or edit. */
   diff?: string;
-  /** The plan (markdown), when the agent asks to leave plan mode. */
+  /** The plan (markdown) when the agent asks to leave plan mode; for PC control, what exactly will be done (a policy, step by step). */
   detail?: string;
 }
 
