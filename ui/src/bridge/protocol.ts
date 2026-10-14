@@ -19,6 +19,7 @@ export const Methods = {
   SessionCancel: "session.cancel",
   SessionSetMode: "session.setMode",
   SessionCompact: "session.compact",
+  CommandsList: "commands.list",
   PermissionRespond: "permission.respond",
   SwarmList: "swarm.list",
   SwarmGet: "swarm.get",
@@ -132,6 +133,13 @@ export interface SettingsUpdate {
 export interface Workspace {
   path: string;
   name: string;
+}
+
+/** One line of the list that opens on "/" in the prompt. */
+export interface SlashEntry {
+  name: string;
+  description: string;
+  kind: "guide" | "built-in" | "command" | "skill";
 }
 
 export interface SessionSummary {
@@ -370,6 +378,7 @@ export interface MethodMap {
   [Methods.SessionCancel]: { params: { sessionId: string }; result: Ok };
   [Methods.SessionSetMode]: { params: { sessionId: string; mode: Mode }; result: Ok };
   [Methods.SessionCompact]: { params: { sessionId: string; focus?: string }; result: Ok };
+  [Methods.CommandsList]: { params: { sessionId: string }; result: { commands: SlashEntry[] } };
   [Methods.PermissionRespond]: { params: { requestId: string; decision: Decision }; result: Ok };
   [Methods.SwarmList]: { params: NoParams; result: { swarms: SwarmSummary[] } };
   [Methods.SwarmGet]: { params: { swarmId: string }; result: SwarmDetail };

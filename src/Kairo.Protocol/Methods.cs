@@ -38,6 +38,8 @@ public static partial class Methods
     public const string SessionSetMode = "session.setMode";
     /// <summary>Summarizes the session so far to free context (the user's /compact). Optional focus: what to keep in detail.</summary>
     public const string SessionCompact = "session.compact";
+    /// <summary>What can follow a "/" in the prompt of a session: tool guides, commands and skills.</summary>
+    public const string CommandsList = "commands.list";
 
     public const string PermissionRespond = "permission.respond";
 
@@ -172,6 +174,11 @@ public sealed record SessionListResult(IReadOnlyList<SessionSummary> Sessions);
 public sealed record SessionCreateParams(string WorkingDirectory);
 
 public sealed record SessionRef(string SessionId);
+
+/// <param name="Kind">guide, built-in, command or skill.</param>
+public sealed record SlashEntryDto(string Name, string Description, string Kind);
+
+public sealed record CommandsListResult(IReadOnlyList<SlashEntryDto> Commands);
 
 /// <summary>A row of the rendered conversation. Kind: user | assistant | tool | compaction | error. For "compaction", Text is the summary.</summary>
 public sealed record TranscriptItem(

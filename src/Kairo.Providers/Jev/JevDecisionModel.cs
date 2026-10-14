@@ -150,6 +150,7 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
                 var detail = await ReadErrorAsync(response).ConfigureAwait(false);
                 throw status switch
                 {
+                    451 => new DecisionException("The fast model (Jev) is not available in this region (HTTP 451), usually because a VPN is off. Do not retry it: carry on without it (PcObserve and PcAct) and tell the user once that the fast model is unavailable.", DecisionFailure.Unavailable),
                     401 or 403 => new DecisionException("Jev refused the API key. Check it in the settings.", DecisionFailure.Unauthorized),
                     400 or 422 => new DecisionException($"Jev rejected the question: {detail}", DecisionFailure.Invalid),
                     404 => new DecisionException($"Jev has no such model or address ('{_model}', {_endpoint}). {detail}", DecisionFailure.Invalid),

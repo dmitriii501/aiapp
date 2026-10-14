@@ -946,6 +946,7 @@ select.input {
 }
 
 .prompt {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -957,6 +958,63 @@ select.input {
 
 .prompt:focus-within {
   border-color: var(--focus);
+}
+
+/* The list that opens above the prompt when it starts with "/". */
+.slash {
+  position: absolute;
+  right: -1px;
+  bottom: calc(100% + 4px);
+  left: -1px;
+  z-index: 5;
+  max-height: 264px;
+  margin: 0;
+  padding: 2px 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel, var(--input));
+  list-style: none;
+}
+
+.slash__item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  height: 22px;
+  padding: 0 10px;
+  overflow: hidden;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.slash__item--active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.slash__name {
+  flex: none;
+  min-width: 96px;
+  font: var(--mono-size) / 22px var(--font-mono);
+}
+
+.slash__desc {
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
+
+.slash__item--active .slash__desc,
+.slash__item--active .slash__kind {
+  color: inherit;
+}
+
+.slash__kind {
+  flex: none;
+  color: var(--faint);
+  font-size: 12px;
 }
 
 .prompt__caret {

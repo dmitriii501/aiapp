@@ -23,6 +23,8 @@ namespace Kairo.Protocol;
 [JsonSerializable(typeof(PcAppParams))]
 [JsonSerializable(typeof(WorkspacePickResult))]
 [JsonSerializable(typeof(WorkspaceListResult))]
+[JsonSerializable(typeof(SlashEntryDto))]
+[JsonSerializable(typeof(CommandsListResult))]
 [JsonSerializable(typeof(SessionListResult))]
 [JsonSerializable(typeof(SessionCreateParams))]
 [JsonSerializable(typeof(SessionSummary))]

@@ -13,6 +13,7 @@ import type {
   SwarmSummary,
   CheckpointPreview,
   McpListResult,
+  SlashEntry,
   UpdateStatus,
   Settings,
   SettingsUpdate,
@@ -113,6 +114,8 @@ interface State {
   setUpdateOpen(open: boolean): void;
   checkUpdate(): Promise<void>;
   installUpdate(): Promise<void>;
+  /** What can follow a "/" in the current session's prompt (tool guides, commands, skills). */
+  listCommands(): Promise<SlashEntry[]>;
   toggleTerminal(): void;
   newTerminal(): Promise<void>;
   selectTerminal(id: string): void;
@@ -510,6 +513,16 @@ export const useStore = create<State>((set, get) => {
 
     async checkUpdate() {
       await bridge.call(Methods.UpdateCheck, {}).then((update) => set({ update })).catch(fail);
+    },
+
+    async listCommands() {
+      const id = get().currentId;
+      if (!id) return [];
+      try {
+        return (await bridge.call(Methods.CommandsList, { sessionId: id })).commands;
+      } catch {
+        return [];
+      }
     },
 
     async installUpdate() {

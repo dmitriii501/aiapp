@@ -5,6 +5,9 @@ import { folderName } from "../format";
 import { Transcript } from "./Transcript";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { MODE_LABELS, MODE_MARKERS } from "./modes";
+import type { SlashEntry } from "../bridge/protocol";
+
+const KIND_LABELS: Record<SlashEntry["kind"], string> = { guide: "инструмент", "built-in": "команда", command: "своя команда", skill: "скилл" };
 
 export function ChatView({ sessionId }: { sessionId: string }) {
   const session = useStore((s) => s.sessions.find((x) => x.id === sessionId));
@@ -108,8 +111,24 @@ function Working({ startedAt }: { startedAt?: number }) {
 
 function Composer({ running }: { running: boolean }) {
   const send = useStore((s) => s.send);
+  const listCommands = useStore((s) => s.listCommands);
   const [text, setText] = useState("");
+  const [commands, setCommands] = useState<SlashEntry[]>([]);
+  const [choice, setChoice] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+
+  // The list opens while the first word starts with "/" and has no space yet: /pc, /dr, / alone.
+  const typing = /^\/[A-Za-z0-9_-]*$/.exec(text)?.[0];
+  const matches = typing === undefined || dismissed ? [] : commands.filter((c) => ("/" + c.name).toLowerCase().startsWith(typing.toLowerCase()));
+
+  useEffect(() => {
+    if (typing === "/" || (typing !== undefined && commands.length === 0)) void listCommands().then(setCommands);
+  }, [typing === undefined, listCommands]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setChoice(0), [typing]);
+  useEffect(() => {
+    if (typing === undefined) setDismissed(false);
+  }, [typing]);
 
   useEffect(() => area.current?.focus(), [running]);
 
@@ -121,7 +140,31 @@ function Composer({ running }: { running: boolean }) {
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [text]);
 
+  const pick = (entry: SlashEntry) => {
+    setText("/" + entry.name + " ");
+    setDismissed(true);
+    area.current?.focus();
+  };
+
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (matches.length > 0 && !e.nativeEvent.isComposing) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setChoice((c) => (c + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && text.trim() !== "/" + matches[choice].name)) {
+        e.preventDefault();
+        pick(matches[choice]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       const value = text.trim();
@@ -133,6 +176,26 @@ function Composer({ running }: { running: boolean }) {
 
   return (
     <div className="prompt">
+      {matches.length > 0 && (
+        <ul className="slash" role="listbox" aria-label="Команды и инструменты">
+          {matches.map((c, i) => (
+            <li
+              key={c.name}
+              role="option"
+              aria-selected={i === choice}
+              className={`slash__item${i === choice ? " slash__item--active" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(c);
+              }}
+            >
+              <span className="slash__name">/{c.name}</span>
+              <span className="slash__desc">{c.description}</span>
+              <span className="slash__kind">{KIND_LABELS[c.kind]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <span className="prompt__caret">&gt;</span>
       <textarea
         ref={area}

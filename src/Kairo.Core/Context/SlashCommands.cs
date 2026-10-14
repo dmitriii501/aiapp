@@ -30,6 +30,9 @@ public sealed record PromptCommand(string Typed, string Note) : SlashResult;
 
 public sealed record UnknownCommand(string Name) : SlashResult;
 
+/// <summary>One line of the list that opens when the user types "/". <see cref="Kind"/>: guide, built-in, command or skill.</summary>
+public sealed record SlashEntry(string Name, string Description, string Kind);
+
 public static partial class SlashCommands
 {
     public static readonly IReadOnlyList<(string Name, string Description)> BuiltIns =
@@ -57,7 +60,7 @@ public static partial class SlashCommands
         foreach (var file in Directory.EnumerateFiles(root, "*.md"))
         {
             var name = System.IO.Path.GetFileNameWithoutExtension(file);
-            if (!NameSyntax().IsMatch(name) || BuiltIns.Any(b => b.Name == name.ToLowerInvariant()))
+            if (!NameSyntax().IsMatch(name) || BuiltIns.Any(b => b.Name == name.ToLowerInvariant()) || BuiltInGuides.Find(name) is not null)
                 continue;
             try
             {
@@ -97,13 +100,37 @@ public static partial class SlashCommands
             return new PromptCommand(text.Trim(), args.Length == 0 ? note : note + "\n\nThe user's arguments: " + args);
         }
 
+        if (BuiltInGuides.Find(name) is { } guide)
+        {
+            var note = $"The user chose the tool guide /{guide.Name}. Use it for this task and for the rest of the conversation:\n\n{guide.Body}";
+            return new PromptCommand(text.Trim(), args.Length == 0 ? note : note + "\n\nThe user's task: " + args);
+        }
+
         return new UnknownCommand(name);
+    }
+
+    /// <summary>Everything that can follow a "/": tool guides first, then Kairo's own commands, the user's commands and skills.</summary>
+    public static IReadOnlyList<SlashEntry> List(string workingDirectory, string? userConfigDirectory)
+    {
+        var entries = new List<SlashEntry>();
+        entries.AddRange(BuiltInGuides.All.Select(g => new SlashEntry(g.Name, g.Description, "guide")));
+        entries.AddRange(BuiltIns.Select(b => new SlashEntry(b.Name, b.Description, "built-in")));
+        var taken = entries.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in Discover(workingDirectory, userConfigDirectory))
+            if (taken.Add(c.Name))
+                entries.Add(new SlashEntry(c.Name, c.Description, "command"));
+        foreach (var s in SkillCatalog.Discover(workingDirectory, userConfigDirectory))
+            if (taken.Add(s.Name))
+                entries.Add(new SlashEntry(s.Name, s.Description, "skill"));
+        return entries;
     }
 
     /// <summary>The text for /help.</summary>
     public static string Help(string workingDirectory, string? userConfigDirectory)
     {
-        var lines = new List<string> { "Команды:" };
+        var lines = new List<string> { "Инструменты (объясняют модели, как ими пользоваться):" };
+        lines.AddRange(BuiltInGuides.All.Select(g => $"  /{g.Name} — {g.Description}"));
+        lines.Add("Команды:");
         lines.AddRange(BuiltIns.Select(b => $"  /{b.Name} — {b.Description}"));
         var custom = Discover(workingDirectory, userConfigDirectory);
         if (custom.Count > 0)

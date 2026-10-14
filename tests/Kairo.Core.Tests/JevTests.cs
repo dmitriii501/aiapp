@@ -179,6 +179,19 @@ public sealed class JevTests
     }
 
     [Fact]
+    public async Task A_region_block_is_explained_in_plain_words_and_never_retried()
+    {
+        var handler = new Script(Reply((HttpStatusCode)451, """{"title":"Typesafe is not available in your region.","status":451}"""));
+
+        var ex = await Assert.ThrowsAsync<DecisionException>(() => Model(handler).DecideAsync(Triage(), default));
+
+        Assert.Equal(DecisionFailure.Unavailable, ex.Kind);
+        Assert.Contains("not available in this region", ex.Message);
+        Assert.Contains("VPN", ex.Message);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
     public async Task An_invalid_question_reports_what_the_service_said()
     {
         var handler = new Script(Reply(HttpStatusCode.UnprocessableEntity, """{"detail":"questions.q.criteria is required"}"""));

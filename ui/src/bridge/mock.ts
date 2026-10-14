@@ -336,6 +336,18 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
         }
         void runTurn(p.sessionId, p.text);
         return { started: true };
+      case Methods.CommandsList:
+        return {
+          commands: [
+            { name: "pc", description: "управление ПК: окна, клики, пакеты действий, быстрая модель", kind: "guide" },
+            { name: "draw", description: "рисование в Paint и других редакторах: кисть, фигуры одним штрихом", kind: "guide" },
+            { name: "browser", description: "браузер: поиск, картинки, копирование и вставка", kind: "guide" },
+            { name: "help", description: "список команд и скиллов", kind: "built-in" },
+            { name: "compact", description: "сжать контекст сессии; можно добавить, что сохранить подробно", kind: "built-in" },
+            { name: "remember", description: "записать заметку в память Kairo", kind: "built-in" },
+            { name: "review", description: "проверка изменений перед коммитом", kind: "skill" },
+          ],
+        };
       case Methods.SessionCompact:
         void runCompact(p.sessionId, sessions.get(p.sessionId)!);
         return { success: true };

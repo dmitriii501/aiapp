@@ -129,6 +129,48 @@ public class SlashCommandTests : IDisposable
     }
 
     [Fact]
+    public void A_tool_guide_is_run_by_name_and_carries_the_task()
+    {
+        var bare = Assert.IsType<PromptCommand>(SlashCommands.Resolve("/pc", Project, User));
+        var withTask = Assert.IsType<PromptCommand>(SlashCommands.Resolve("/draw нарисуй кота", Project, User));
+
+        Assert.Equal("/pc", bare.Typed);
+        Assert.Contains("PcBatch", bare.Note);
+        Assert.Contains("PcCheck", bare.Note);
+        Assert.Contains("drag_path", withTask.Note);
+        Assert.EndsWith("The user's task: нарисуй кота", withTask.Note);
+    }
+
+    [Fact]
+    public void A_custom_command_cannot_take_the_name_of_a_guide_and_help_lists_the_guides()
+    {
+        _dir.File(@"user\commands\pc.md", "I override the guide");
+
+        var resolved = Assert.IsType<PromptCommand>(SlashCommands.Resolve("/pc", Project, User));
+        var help = SlashCommands.Help(Project, User);
+
+        Assert.DoesNotContain("I override the guide", resolved.Note);
+        Assert.Contains("/pc — управление ПК", help);
+        Assert.Contains("/draw", help);
+    }
+
+    [Fact]
+    public void The_list_after_a_slash_starts_with_the_guides_and_has_no_duplicates()
+    {
+        _dir.File(@"user\commands\fix.md", "---\ndescription: Fix\n---\nFix it.");
+        _dir.File(@"user\skills\review\SKILL.md", "---\ndescription: Review\n---\nLook.");
+
+        var list = SlashCommands.List(Project, User);
+
+        Assert.Equal(["pc", "draw", "browser"], list.Take(3).Select(e => e.Name));
+        Assert.All(list.Take(3), e => Assert.Equal("guide", e.Kind));
+        Assert.Contains(list, e => e is { Name: "help", Kind: "built-in" });
+        Assert.Contains(list, e => e is { Name: "fix", Kind: "command" });
+        Assert.Contains(list, e => e is { Name: "review", Kind: "skill" });
+        Assert.Equal(list.Count, list.Select(e => e.Name.ToLowerInvariant()).Distinct().Count());
+    }
+
+    [Fact]
     public void A_skill_can_be_run_by_name_and_built_ins_cannot_be_shadowed()
     {
         _dir.File(@"user\skills\review\SKILL.md", "---\ndescription: Review\n---\nLook at the diff.");

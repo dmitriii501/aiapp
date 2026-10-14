@@ -64,6 +64,8 @@ public static class HostMethods
         rpc.Register(Methods.SessionOpen, ctx.SessionRef, ctx.SessionDetail, (p, _) => Task.FromResult(host.Open(p.SessionId)));
         rpc.Register(Methods.SessionSend, ctx.SessionSendParams, ctx.SendResult, (p, _) =>
             Task.FromResult(new SendResult(host.Send(p.SessionId, p.Text))));
+        rpc.Register(Methods.CommandsList, ctx.SessionRef, ctx.CommandsListResult, (p, _) =>
+            Task.FromResult(new CommandsListResult([.. host.Commands(p.SessionId).Select(e => new SlashEntryDto(e.Name, e.Description, e.Kind))])));
         rpc.Register(Methods.SessionCompact, ctx.SessionCompactParams, ctx.Ok, (p, _) =>
         {
             host.Compact(p.SessionId, p.Focus);

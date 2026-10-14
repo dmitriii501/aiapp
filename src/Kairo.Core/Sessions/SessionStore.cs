@@ -50,6 +50,13 @@ public sealed class SessionStore : IDisposable
                 PRIMARY KEY (session_id, seq)
             );
             CREATE INDEX IF NOT EXISTS sessions_by_cwd ON sessions(cwd, updated_at);
+            CREATE TABLE IF NOT EXISTS session_events (
+                session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                at          TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                text        TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS session_events_by_session ON session_events(session_id, at);
             CREATE TABLE IF NOT EXISTS workspaces (
                 path        TEXT PRIMARY KEY COLLATE NOCASE,
                 last_used   TEXT NOT NULL
@@ -148,6 +155,27 @@ public sealed class SessionStore : IDisposable
                     : DateTimeOffset.Parse(reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture);
                 result.Add(new TimedMessage(reader.GetInt32(0), at, JsonSerializer.Deserialize(reader.GetString(1), SessionJsonContext.Default.ChatMessage)!));
             }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Notes what happened to a turn that left no message: a provider error, a cancel. They are not part of the conversation (the model
+    /// never sees them); <c>kairo sessions timeline</c> uses them to explain a long gap.
+    /// </summary>
+    public void AddEvent(string sessionId, string kind, string text) =>
+        Execute("INSERT INTO session_events (session_id, at, kind, text) VALUES ($id, $at, $kind, $text)",
+            ("$id", sessionId), ("$at", DateTimeOffset.UtcNow.ToString("O")), ("$kind", kind), ("$text", text.Length > 600 ? text[..600] : text));
+
+    public IReadOnlyList<SessionEvent> LoadEvents(string sessionId)
+    {
+        var result = new List<SessionEvent>();
+        lock (_lock)
+        {
+            using var cmd = Command("SELECT at, kind, text FROM session_events WHERE session_id = $id ORDER BY at", ("$id", sessionId));
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                result.Add(new SessionEvent(DateTimeOffset.Parse(reader.GetString(0), System.Globalization.CultureInfo.InvariantCulture), reader.GetString(1), reader.GetString(2)));
         }
         return result;
     }

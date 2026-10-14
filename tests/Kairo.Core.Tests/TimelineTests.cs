@@ -122,7 +122,61 @@ public sealed class TimelineTests : IDisposable
         Assert.Equal(TimeSpan.Zero, report.Model + report.Tools + report.User);
     }
 
+    [Fact]
+    public void An_error_inside_a_long_gap_is_named_as_its_reason()
+    {
+        var report = Timeline.Build(
+        [
+            At(1, 0, User("go")),
+            At(2, 5, Assistant("PcAct")),
+            At(3, 6, Results("c0")),
+            At(4, 280, User("continue")),       // 274 s of nothing stored
+        ],
+        events: [new SessionEvent(T0.AddSeconds(100), "error", "Provider answered 529 overloaded")]);
+
+        var gap = report.Longest[0];
+
+        Assert.Equal(TimeKind.User, gap.Kind);
+        Assert.Contains("error at", gap.Label);
+        Assert.Contains("529 overloaded", gap.Label);
+        Assert.Single(report.Events!);
+    }
+
+    [Fact]
+    public void The_spread_of_the_models_turns_shows_the_slow_ones_the_mean_hides()
+    {
+        var messages = new List<TimedMessage> { At(1, 0, User("go")) };
+        var t = 0.0;
+        for (var i = 0; i < 10; i++)
+        {
+            t += i == 9 ? 100 : 5; // nine answers of 5 s and one of 100 s
+            messages.Add(At(2 + i, t, Assistant()));
+            t += 0; // answers follow each other
+        }
+
+        var spread = Timeline.Build(messages).ModelTurns!;
+
+        Assert.Equal(10, spread.Count);
+        Assert.Equal(TimeSpan.FromSeconds(100), spread.Max);
+        Assert.Equal(TimeSpan.FromSeconds(5), spread.Median);
+        Assert.True(spread.Mean > spread.Median * 2);
+    }
+
     // ---- storage ----
+
+    [Fact]
+    public void Errors_are_stored_with_the_session_and_come_back_in_order()
+    {
+        using var store = new SessionStore(Path.Combine(_dir, "events.db"));
+        var session = store.Create(_dir, "m", "t");
+
+        store.AddEvent(session.Id, "error", "first");
+        store.AddEvent(session.Id, "cancelled", "second");
+
+        Assert.Equal(["first", "second"], store.LoadEvents(session.Id).Select(e => e.Text));
+        Assert.Equal(["error", "cancelled"], store.LoadEvents(session.Id).Select(e => e.Kind));
+        Assert.Empty(store.LoadEvents("nobody"));
+    }
 
     [Fact]
     public void New_messages_are_stored_with_their_time()

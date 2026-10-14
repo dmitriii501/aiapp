@@ -180,6 +180,9 @@ public sealed class AgentHost(
     /// Replaces the model's view of the session with a summary (the user's /compact). The stored log keeps every message.
     /// Runs in the background like a turn: the session is busy meanwhile and the user can stop it.
     /// </summary>
+    public IReadOnlyList<SlashEntry> Commands(string sessionId) =>
+        SlashCommands.List(GetLive(sessionId).Info.WorkingDirectory, settings.UserConfigDirectory);
+
     public void Compact(string sessionId, string? focus)
     {
         var live = GetLive(sessionId);
@@ -358,11 +361,14 @@ public sealed class AgentHost(
         catch (OperationCanceledException)
         {
             reason = "cancelled";
+            Note(id, "cancelled", "the turn was cancelled");
         }
         catch (Exception ex)
         {
             reason = "error";
-            await _notify(new AgentEventDto(id, "error", Text: ErrorText.Describe(ex, providerId))).ConfigureAwait(false);
+            var described = ErrorText.Describe(ex, providerId);
+            Note(id, "error", described);
+            await _notify(new AgentEventDto(id, "error", Text: described)).ConfigureAwait(false);
         }
         finally
         {
@@ -373,6 +379,18 @@ public sealed class AgentHost(
 
         await _notify(new AgentEventDto(id, "turn_finished", Reason: reason, InputTokens: input, OutputTokens: output)).ConfigureAwait(false);
         await sessionsChanged().ConfigureAwait(false);
+    }
+
+    /// <summary>Keeps a note of an error or a cancel with the session (for `kairo sessions timeline`); a failure to write it never matters.</summary>
+    private void Note(string sessionId, string kind, string text)
+    {
+        try
+        {
+            store.AddEvent(sessionId, kind, text);
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException or ObjectDisposedException)
+        {
+        }
     }
 
     private async Task RunCompactionAsync(LiveSession live, Agent agent, string? focus, CancellationTokenSource turn, string providerId)

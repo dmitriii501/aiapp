@@ -264,11 +264,15 @@ async Task<bool> RunTurnAsync(string text, CancellationToken ct, string? note = 
     catch (OperationCanceledException)
     {
         ConsoleUi.Write(ConsoleColor.Yellow, "\n[interrupted]\n");
+        if (session is not null)
+            store.AddEvent(session.Id, "cancelled", "interrupted");
         return false;
     }
     catch (Exception ex) when (ex is ModelProviderException or HttpRequestException || ex.GetType().Namespace?.StartsWith("Anthropic", StringComparison.Ordinal) == true)
     {
         ConsoleUi.Write(ConsoleColor.Red, $"\nerror: {ex.Message}\n");
+        if (session is not null)
+            store.AddEvent(session.Id, "error", ex.Message);
         return false;
     }
 }
