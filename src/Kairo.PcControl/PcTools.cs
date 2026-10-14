@@ -8,8 +8,9 @@ using Kairo.Core.Tools;
 namespace Kairo.PcControl;
 
 /// <summary>
-/// The tools of the big model (System 2) for driving the PC. All of them are <see cref="RiskLevel.System"/>: they ask even in the
-/// mode without confirmations, and only for applications the user listed under <c>[pc] apps</c>. The listing of windows is the one
+/// The tools of the big model (System 2) for driving the PC. They are <see cref="RiskLevel.System"/>: they ask even in the
+/// mode without confirmations, unless the user set <c>[pc] autonomous</c> (then they count as <see cref="RiskLevel.Exec"/>: the
+/// mode without confirmations lets them through, the other modes still ask). Only applications the user listed under <c>[pc] apps</c>. The listing of windows is the one
 /// exception (it shows the allowed applications only), so the model can find out what it may touch.
 /// </summary>
 public static class PcTools
@@ -42,7 +43,8 @@ public static class PcTools
             decisionModel,
             new PursueOptions(MaxSteps: config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7),
             overlay ?? (desktop is null && config.PcOverlay != false ? ControlOverlay.Shared : null),
-            vision: config.PcVision == true);
+            vision: config.PcVision == true,
+            autonomous: config.PcAutonomous == true);
         var tools = new List<ITool> { new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session) };
         // Pictures only when the user said the model can read them: otherwise the tool would only waste tokens.
         if (config.PcVision == true)
@@ -51,7 +53,7 @@ public static class PcTools
     }
 }
 
-internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionModel?> decisionModel, PursueOptions options, ControlOverlay? overlay = null, bool vision = false)
+internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionModel?> decisionModel, PursueOptions options, ControlOverlay? overlay = null, bool vision = false, bool autonomous = false)
 {
     /// <summary>The user said the model can read pictures: screenshots and pixel actions are on.</summary>
     public bool Vision { get; } = vision;
@@ -121,7 +123,11 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
         }
     }
 
-    public static ToolAssessment Assess(string tool, string process, string summary) => new(RiskLevel.System, process, $"{tool}({summary})");
+    /// <summary>Whether the user let the PC tools run without questions in the mode without confirmations.</summary>
+    public bool Autonomous { get; } = autonomous;
+
+    public ToolAssessment Assess(string tool, string process, string summary) =>
+        new(Autonomous ? RiskLevel.Exec : RiskLevel.System, process, $"{tool}({summary})");
 
     public string Screen(long handle, out Observation observation)
     {
@@ -176,7 +182,7 @@ internal sealed class PcLaunchTool(PcSession session) : ITool
             throw new ToolInputException($"{name} cannot be controlled (terminals, password managers and system tools are always out of reach).");
         if (!session.Guard.IsAllowed(name))
             throw new ToolInputException($"{name} is not in the list of applications Kairo may control. The user adds it under [pc] apps in config.toml.");
-        return PcSession.Assess("PcLaunch", name, name);
+        return session.Assess("PcLaunch", name, name);
     }
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
@@ -203,7 +209,7 @@ internal sealed class PcObserveTool(PcSession session) : ITool
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
-        return PcSession.Assess("PcObserve", window.Process, $"{window.Process}: {window.Title}");
+        return session.Assess("PcObserve", window.Process, $"{window.Process}: {window.Title}");
     }
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
@@ -226,7 +232,7 @@ internal sealed class PcScreenshotTool(PcSession session) : ITool
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
-        return PcSession.Assess("PcScreenshot", window.Process, $"{window.Process}: {window.Title}");
+        return session.Assess("PcScreenshot", window.Process, $"{window.Process}: {window.Title}");
     }
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
@@ -288,7 +294,7 @@ internal sealed class PcActTool(PcSession session) : ITool
     {
         var (window, action, _) = Parse(input);
         var what = action.Kind == DesktopActionKind.Hotkey ? $"hotkey {action.Text}" : IsPixel(action.Kind) ? action.ToString() : $"{action.Kind} {action.ElementId}";
-        return PcSession.Assess("PcAct", window.Process, $"{window.Process}: {what}");
+        return session.Assess("PcAct", window.Process, $"{window.Process}: {what}");
     }
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
@@ -376,7 +382,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
     {
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
         var goal = ToolInput.RequiredString(input, "subgoal").Trim().ReplaceLineEndings(" ");
-        return PcSession.Assess("PcPursue", window.Process, $"{window.Process}: {(goal.Length > 100 ? goal[..100] + "…" : goal)}");
+        return session.Assess("PcPursue", window.Process, $"{window.Process}: {(goal.Length > 100 ? goal[..100] + "…" : goal)}");
     }
 
     public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)

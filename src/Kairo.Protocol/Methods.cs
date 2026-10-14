@@ -123,7 +123,8 @@ public sealed record Settings(
     IReadOnlyList<string>? SandboxRead = null,
     bool PcEnabled = false,
     IReadOnlyList<string>? PcApps = null,
-    bool PcVision = false);
+    bool PcVision = false,
+    bool PcAutonomous = false);
 
 /// <summary>Null fields stay unchanged. Effort "default" clears it.</summary>
 public sealed record SettingsUpdate(
@@ -135,7 +136,8 @@ public sealed record SettingsUpdate(
     string? SandboxShell = null,
     bool? SandboxNetwork = null,
     bool? PcEnabled = null,
-    bool? PcVision = null);
+    bool? PcVision = null,
+    bool? PcAutonomous = null);
 
 public sealed record SandboxReadRemoveParams(string Path);
 

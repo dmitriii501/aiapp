@@ -53,7 +53,8 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             SandboxRead: config.SandboxRead.ToList(),
             PcEnabled: config.PcEnabled ?? false,
             PcApps: config.PcApps.ToList(),
-            PcVision: config.PcVision ?? false);
+            PcVision: config.PcVision ?? false,
+            PcAutonomous: config.PcAutonomous ?? false);
     }
 
     public Settings Update(SettingsUpdate update)
@@ -101,6 +102,14 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
                     pc["vision"] = true;
                 else
                     pc.Remove("vision");
+            }
+            if (update.PcAutonomous is { } pcAutonomous)
+            {
+                var pc = KairoConfig.Section(table, "pc");
+                if (pcAutonomous)
+                    pc["autonomous"] = true;
+                else
+                    pc.Remove("autonomous");
             }
             if (update.SandboxNetwork is { } network)
             {

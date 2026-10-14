@@ -115,6 +115,9 @@ public sealed class KairoConfig
     /// <summary>Screenshots and clicks by coordinates for a vision model (<c>[pc] vision</c>, default false). User's file only.</summary>
     public bool? PcVision { get; set; }
 
+    /// <summary>PC tools stop asking in the mode without confirmations (<c>[pc] autonomous</c>, default false). User's file only.</summary>
+    public bool? PcAutonomous { get; set; }
+
     /// <summary>Most steps of one fast run (<c>[pc] max_steps</c>, default 25). User's file only.</summary>
     public int? PcMaxSteps { get; set; }
 
@@ -177,14 +180,14 @@ public sealed class KairoConfig
             var userHooks = config.Hooks.ToList();
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             var (decisionModel, decisionUrl, decisionDeadline) = (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs);
-            var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision);
+            var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision, pcAutonomous) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision, config.PcAutonomous);
             var userRead = config.SandboxRead.ToList();
             var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
             (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs) = (decisionModel, decisionUrl, decisionDeadline);
             // Which programs may be driven is the user's call alone.
-            (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision);
+            (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision, config.PcAutonomous) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision, pcAutonomous);
             config.PcApps.Clear();
             config.PcApps.AddRange(pcApps);
             // The sandbox is the user's fence; a project can neither lift it nor open more of the disk to it.
@@ -326,6 +329,8 @@ public sealed class KairoConfig
                 PcOverlay = showOverlay;
             if (pc.TryGetValue("vision", out var visionValue) && visionValue is bool useVision)
                 PcVision = useVision;
+            if (pc.TryGetValue("autonomous", out var autoValue) && autoValue is bool autonomous)
+                PcAutonomous = autonomous;
             if (pc.TryGetValue("max_steps", out var steps) && steps is long stepCount)
                 PcMaxSteps = (int)Math.Clamp(stepCount, 1, 60);
             if (pc.TryGetValue("min_confidence", out var minConf))

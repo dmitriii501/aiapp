@@ -102,6 +102,8 @@ export interface Settings {
   pcApps?: string[];
   /** Screenshots and clicks by coordinates are on: the model must be able to read images. */
   pcVision?: boolean;
+  /** PC tools do not ask in the mode without confirmations. */
+  pcAutonomous?: boolean;
 }
 
 export interface PcApp {
@@ -121,6 +123,7 @@ export interface SettingsUpdate {
   sandboxNetwork?: boolean;
   pcEnabled?: boolean;
   pcVision?: boolean;
+  pcAutonomous?: boolean;
 }
 
 export interface Workspace {

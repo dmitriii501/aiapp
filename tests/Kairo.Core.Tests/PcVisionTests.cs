@@ -52,6 +52,7 @@ public sealed class PcVisionTests
 
         Assert.Null(config.PcVision);
         Assert.Null(config.PcOverlay);
+        Assert.Null(config.PcAutonomous);
     }
 
     [Fact]
@@ -152,5 +153,26 @@ public sealed class PcVisionTests
             Assert.Equal(Kairo.Core.Permissions.PermissionDecision.Ask, engine.Evaluate(call.Item1.Spec.Name, assessment, Ctx).Decision);
         }
         Assert.Contains("(3, 4)", Tool(tools, "PcAct").Assess(Json(new { action = "click_at", x = 3, y = 4, look = 1 }), Ctx).Summary);
+    }
+
+    [Fact]
+    public void With_autonomous_on_the_pc_tools_pass_in_bypass_but_still_ask_in_the_default_mode()
+    {
+        var tools = PcTools.For(Config("vision = true\nautonomous = true"), () => null, _desktop);
+        var bypass = new Kairo.Core.Permissions.PermissionEngine(new Kairo.Core.Permissions.PermissionRules(), Kairo.Core.Permissions.PermissionMode.Bypass);
+        var normal = new Kairo.Core.Permissions.PermissionEngine(new Kairo.Core.Permissions.PermissionRules(), Kairo.Core.Permissions.PermissionMode.Default);
+
+        foreach (var call in new[]
+                 {
+                     (Tool(tools, "PcAct"), Json(new { action = "click_at", x = 3, y = 4, look = 1 })),
+                     (Tool(tools, "PcAct"), Json(new { action = "type_focused", text = "x" })),
+                     (Tool(tools, "PcScreenshot"), Json(new { })),
+                     (Tool(tools, "PcObserve"), Json(new { })),
+                 })
+        {
+            var assessment = call.Item1.Assess(call.Item2, Ctx);
+            Assert.Equal(Kairo.Core.Permissions.PermissionDecision.Allow, bypass.Evaluate(call.Item1.Spec.Name, assessment, Ctx).Decision);
+            Assert.Equal(Kairo.Core.Permissions.PermissionDecision.Ask, normal.Evaluate(call.Item1.Spec.Name, assessment, Ctx).Decision);
+        }
     }
 }
