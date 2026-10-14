@@ -116,6 +116,23 @@ internal static unsafe partial class Win32
         mouse_event(0x4, 0, 0, 0, 0); // left up
     }
 
+    /// <summary>The program that owns the top-level window under a screen point, or 0.</summary>
+    public static int ProcessAt(int x, int y)
+    {
+        var window = WindowFromPoint(new Point { X = x, Y = y });
+        if (window == 0)
+            return 0;
+        var root = GetAncestor(window, 2 /* GA_ROOT */);
+        return ProcessOf(root == 0 ? window : root);
+    }
+
+    public static void DoubleClick(int x, int y)
+    {
+        Click(x, y);
+        Thread.Sleep(60);
+        Click(x, y);
+    }
+
     public static nint Foreground() => GetForegroundWindow();
 
     public static int ProcessOf(nint hwnd)
@@ -130,10 +147,23 @@ internal static unsafe partial class Win32
     {
         if (IsIconic(hwnd))
             ShowWindow(hwnd, SwRestore);
-        // Windows refuses to hand the foreground to a process that was not the last to get input; a harmless Alt tap lifts the lock.
-        keybd_event(0x12, 0, 0, 0);
-        keybd_event(0x12, 0, KeyEventKeyUp, 0);
-        return SetForegroundWindow(hwnd) || GetForegroundWindow() == hwnd;
+        // Windows lets only the program that has the input focus hand it on. Joining the input queue of the window that has it for a moment
+        // gives us that right without pressing any key (a tap of Alt would switch the menu bar of the target on).
+        var foreground = GetForegroundWindow();
+        var theirs = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
+        var ours = GetCurrentThreadId();
+        var attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
+        try
+        {
+            BringWindowToTop(hwnd);
+            SetForegroundWindow(hwnd);
+        }
+        finally
+        {
+            if (attached)
+                AttachThreadInput(ours, theirs, false);
+        }
+        return GetForegroundWindow() == hwnd;
     }
 
     /// <summary>True if Pause is down now or was pressed since this was last asked.</summary>
@@ -230,8 +260,9 @@ internal static unsafe partial class Win32
     {
         public uint Type;
         public KeyboardInput Data;
-        // The native INPUT union is as large as MOUSEINPUT; this padding keeps the struct the size SendInput expects.
-        private long _pad1, _pad2;
+        // The native INPUT union is as large as MOUSEINPUT (32 bytes on x64) and KeyboardInput is 24: 8 bytes of padding make INPUT the
+        // 40 bytes SendInput insists on (it refuses any other size).
+        private long _pad;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -275,6 +306,17 @@ internal static unsafe partial class Win32
     [LibraryImport("user32.dll")]
     private static partial nint GetForegroundWindow();
 
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool BringWindowToTop(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AttachThreadInput(uint from, uint to, [MarshalAs(UnmanagedType.Bool)] bool attach);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial uint GetCurrentThreadId();
+
     [LibraryImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
     private static partial int GetWindowTextLength(nint hwnd);
 
@@ -295,6 +337,18 @@ internal static unsafe partial class Win32
 
     [LibraryImport("user32.dll", SetLastError = true)]
     private static partial uint SendInput(uint count, Input* inputs, int size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point
+    {
+        public int X, Y;
+    }
+
+    [LibraryImport("user32.dll")]
+    private static partial nint WindowFromPoint(Point point);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint GetAncestor(nint window, uint flags);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

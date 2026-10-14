@@ -123,6 +123,65 @@ public sealed class DesktopIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void A_screenshot_is_taken_clicked_on_and_typed_into_without_the_tree()
+    {
+        if (NoDesktop)
+            return;
+        var window = StartNotepad();
+
+        var shot = _desktop.Capture(window.Handle);
+        var p = shot.Picture;
+        Assert.True(p.Width > 100 && p.Height > 100 && p.Png.Length > 1000, $"{p.Width}x{p.Height}, {p.Png.Length} bytes");
+        Assert.Equal([137, 80, 78, 71], p.Png.Take(4)); // PNG signature
+
+        // A click in the middle of the window lands in the text area; typing goes where the focus is.
+        var click = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.ClickAt, shot.Id, null, null, p.Width / 2, p.Height / 2));
+        Assert.True(click.Ok, click.Message);
+        var typed = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.TypeFocused, 0, null, "по пикселям"));
+        Assert.True(typed.Ok, typed.Message);
+
+        Assert.Contains(_desktop.Observe(window.Handle).Elements, e => e.Value == "по пикселям");
+    }
+
+    [Fact]
+    public void A_shortcut_reaches_the_window_for_real()
+    {
+        if (NoDesktop)
+            return;
+        var window = StartNotepad();
+        var look = _desktop.Observe(window.Handle);
+        var edit = look.Elements.First(e => e.Can.HasFlag(UiCapability.SetValue));
+        Assert.True(_desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.SetValue, look.Version, edit.Id, "old text")).Ok);
+        Assert.True(_desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.Focus, _desktop.Observe(window.Handle).Version, edit.Id)).Ok);
+
+        // Select all, then type over it: only a shortcut that really arrived leaves just the new text.
+        var keys = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.Hotkey, 0, null, "ctrl+a"));
+        var typed = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.TypeFocused, 0, null, "new"));
+
+        Assert.True(keys.Ok, keys.Message);
+        Assert.True(typed.Ok, typed.Message);
+        Assert.Contains(_desktop.Observe(window.Handle).Elements, e => e.Value == "new");
+    }
+
+    [Fact]
+    public void A_click_on_a_screenshot_that_is_not_the_latest_is_refused_and_nothing_is_clicked()
+    {
+        if (NoDesktop)
+            return;
+        var window = StartNotepad();
+        var first = _desktop.Capture(window.Handle);
+        _desktop.Capture(window.Handle);
+
+        var stale = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.ClickAt, first.Id, null, null, 50, 50));
+        var outside = _desktop.Perform(window.Handle, new DesktopAction(DesktopActionKind.ClickAt, first.Id + 1, null, null, 99999, 5));
+
+        Assert.False(stale.Ok);
+        Assert.Contains("latest screenshot", stale.Message);
+        Assert.False(outside.Ok);
+        Assert.Contains("outside the screenshot", outside.Message);
+    }
+
+    [Fact]
     public void The_window_list_has_notepad_with_its_process_and_title()
     {
         if (NoDesktop)
@@ -134,5 +193,86 @@ public sealed class DesktopIntegrationTests : IDisposable
         Assert.NotNull(found);
         Assert.Equal("notepad.exe", found.Process);
         Assert.NotEmpty(found.Title);
+    }
+}
+
+/// <summary>The banner is a real window; these need a desktop session like the Notepad tests above.</summary>
+[Collection("Desktop")]
+public sealed class OverlayTests
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "FindWindowW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern nint FindWindow(string className, string? title);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(nint window);
+
+    private static bool NoDesktop =>
+        Environment.GetEnvironmentVariable("KAIRO_NO_DESKTOP_TESTS") == "1"
+        || !Environment.UserInteractive
+        || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true" && Environment.GetEnvironmentVariable("KAIRO_DESKTOP_TESTS") != "1";
+
+    private static bool BannerVisible() => FindWindow(ControlOverlay.ClassName, null) is var w && w != 0 && IsWindowVisible(w);
+
+    private static async Task<bool> Eventually(Func<bool> condition, int ms = 4000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(ms);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+                return true;
+            await Task.Delay(40);
+        }
+        return condition();
+    }
+
+    [Fact]
+    public async Task The_banner_is_up_while_work_is_going_on_stays_for_nested_work_and_goes_when_all_of_it_ends()
+    {
+        if (NoDesktop)
+            return;
+        using var overlay = new ControlOverlay();
+
+        var outer = overlay.Begin();
+        Assert.True(await Eventually(BannerVisible), "the banner did not appear");
+        var inner = overlay.Begin();
+        outer.Dispose();
+        outer.Dispose(); // a second dispose must not end the inner work's banner
+        await Task.Delay(1000);
+        Assert.True(BannerVisible(), "the banner went while nested work was still running");
+
+        inner.Dispose();
+        Assert.True(await Eventually(() => !BannerVisible()), "the banner did not go after the last work ended");
+        Assert.False(overlay.IsShown);
+    }
+
+    [Fact]
+    public async Task Work_that_follows_at_once_keeps_the_banner_without_flicker()
+    {
+        if (NoDesktop)
+            return;
+        using var overlay = new ControlOverlay();
+
+        overlay.Begin().Dispose();
+        await Task.Delay(250); // less than the grace period
+        using var next = overlay.Begin();
+        await Task.Delay(1200);
+
+        Assert.True(BannerVisible());
+    }
+
+    [Fact]
+    public async Task Disposing_the_overlay_removes_the_window()
+    {
+        if (NoDesktop)
+            return;
+        var overlay = new ControlOverlay();
+        using (overlay.Begin())
+            Assert.True(await Eventually(BannerVisible));
+
+        overlay.Dispose();
+
+        Assert.True(await Eventually(() => FindWindow(ControlOverlay.ClassName, null) == 0));
+        overlay.Begin().Dispose(); // after disposal Begin is a harmless no-op
     }
 }

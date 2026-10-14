@@ -51,8 +51,55 @@ public sealed record RedactedThinkingPart(string Data) : MessagePart;
 /// <summary>A tool call requested by the model. <see cref="Input"/> is the parsed JSON object.</summary>
 public sealed record ToolCallPart(string Id, string Name, JsonElement Input) : MessagePart;
 
-/// <summary>Diff is for the UI transcript only; providers ignore it.</summary>
-public sealed record ToolResultPart(string ToolCallId, string Content, bool IsError = false, string? Diff = null) : MessagePart;
+/// <summary>A picture a tool returns for a model that can look at images (a screenshot). Base64 so it survives any JSON hop.</summary>
+public sealed record ToolImage(string MediaType, string Base64);
+
+/// <summary>
+/// Diff is for the UI transcript only; providers ignore it. <see cref="Images"/> are not saved with the session (they would swell it),
+/// and a request carries only the latest few (see <see cref="ModelImages"/>); the text says what the picture showed.
+/// </summary>
+public sealed record ToolResultPart(
+    string ToolCallId,
+    string Content,
+    bool IsError = false,
+    string? Diff = null,
+    [property: JsonIgnore] IReadOnlyList<ToolImage>? Images = null) : MessagePart;
+
+/// <summary>Keeps pictures in a request only where they still matter: a screenshot is stale after the next one.</summary>
+public static class ModelImages
+{
+    public const int Keep = 2;
+
+    /// <summary>The messages with all but the newest <paramref name="keep"/> pictures replaced by a note. The stored history is not touched.</summary>
+    public static IReadOnlyList<ChatMessage> ForRequest(IReadOnlyList<ChatMessage> history, int keep = Keep)
+    {
+        var total = history.Sum(m => m.Parts.OfType<ToolResultPart>().Count(p => p.Images is { Count: > 0 }));
+        if (total <= keep)
+            return history;
+
+        var drop = total - keep;
+        var result = new List<ChatMessage>(history.Count);
+        foreach (var message in history)
+        {
+            if (drop == 0 || !message.Parts.Any(p => p is ToolResultPart { Images.Count: > 0 }))
+            {
+                result.Add(message);
+                continue;
+            }
+            var parts = message.Parts.Select(p =>
+            {
+                if (drop > 0 && p is ToolResultPart { Images.Count: > 0 } r)
+                {
+                    drop--;
+                    return r with { Images = null, Content = r.Content + "\n(An earlier screenshot is no longer attached; take a new one if you need to look.)" };
+                }
+                return p;
+            }).ToList();
+            result.Add(message with { Parts = parts });
+        }
+        return result;
+    }
+}
 
 /// <summary>A tool the model may call. <see cref="InputSchema"/> is a JSON Schema object.</summary>
 public sealed record ToolSpec(string Name, string Description, JsonElement InputSchema);

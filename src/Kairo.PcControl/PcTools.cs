@@ -17,7 +17,8 @@ public static class PcTools
     private static int _warmed;
 
     /// <summary>The tools, or none when PC control is off or no application was listed.</summary>
-    public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null)
+    /// <param name="overlay">The on-screen banner; by default the real one when the real desktop is used (and <c>[pc] overlay</c> is not off).</param>
+    public static IReadOnlyList<ITool> For(KairoConfig config, Func<IDecisionModel?> decisionModel, IDesktop? desktop = null, ControlOverlay? overlay = null)
     {
         if (config.PcEnabled != true || config.PcApps.Count == 0)
             return [];
@@ -39,13 +40,34 @@ public static class PcTools
             desktop ?? UiaDesktop.Shared,
             new PcGuard(config.PcApps),
             decisionModel,
-            new PursueOptions(MaxSteps: config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7));
-        return [new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session)];
+            new PursueOptions(MaxSteps: config.PcMaxSteps ?? 25, MinConfidence: config.PcMinConfidence ?? 0.7),
+            overlay ?? (desktop is null && config.PcOverlay != false ? ControlOverlay.Shared : null),
+            vision: config.PcVision == true);
+        var tools = new List<ITool> { new PcWindowsTool(session), new PcLaunchTool(session), new PcObserveTool(session), new PcActTool(session), new PcPursueTool(session), new PcRunPolicyTool(session) };
+        // Pictures only when the user said the model can read them: otherwise the tool would only waste tokens.
+        if (config.PcVision == true)
+            tools.Insert(3, new PcScreenshotTool(session));
+        return tools;
     }
 }
 
-internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionModel?> decisionModel, PursueOptions options)
+internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionModel?> decisionModel, PursueOptions options, ControlOverlay? overlay = null, bool vision = false)
 {
+    /// <summary>The user said the model can read pictures: screenshots and pixel actions are on.</summary>
+    public bool Vision { get; } = vision;
+
+    private static readonly IDisposable NoBanner = new Nothing();
+
+    private sealed class Nothing : IDisposable
+    {
+        public void Dispose()
+        {
+        }
+    }
+
+    /// <summary>Shows the "Kairo is driving the PC" banner until the returned handle is disposed.</summary>
+    public IDisposable Begin() => overlay?.Begin() ?? NoBanner;
+
     public IDesktop Desktop { get; } = desktop;
     public PcGuard Guard { get; } = guard;
     public Func<IDecisionModel?> DecisionModel { get; } = decisionModel;
@@ -104,7 +126,14 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
     public string Screen(long handle, out Observation observation)
     {
         observation = Desktop.Observe(handle);
-        return $"Look {observation.Version}. Use these element ids with PcAct (they are valid until the next look).\n" + observation.ToText();
+        var text = $"Look {observation.Version}. Use these element ids with PcAct (they are valid until the next look).\n" + observation.ToText();
+        if (observation.Elements.Count < 3)
+        {
+            text += Vision
+                ? "The window shows almost no elements to UI Automation: use PcScreenshot to see it and PcAct click_at / type_focused to work with it.\n"
+                : "The window shows almost no elements to UI Automation (a game or a custom-drawn window?); it cannot be driven this way.\n";
+        }
+        return text;
     }
 }
 
@@ -152,6 +181,7 @@ internal sealed class PcLaunchTool(PcSession session) : ITool
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
+        using var banner = session.Begin();
         var name = PcGuard.Normalize(ToolInput.RequiredString(input, "application"));
         // Started by its bare name, as the user's PATH and App Paths resolve it: a path from the model is never run.
         var window = session.Desktop.Launch(name, TimeSpan.FromSeconds(10));
@@ -178,8 +208,50 @@ internal sealed class PcObserveTool(PcSession session) : ITool
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
+        using var banner = session.Begin();
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
         return Task.FromResult(new ToolResult(session.Screen(window.Handle, out _)));
+    }
+}
+
+internal sealed class PcScreenshotTool(PcSession session) : ITool
+{
+    public ToolSpec Spec { get; } = new(
+        "PcScreenshot",
+        "Takes a picture of a window (brought to the front) for when UI Automation shows too little: a game, a custom-drawn window, an image. " +
+        "The result is the picture and its number. Coordinates for PcAct click_at / double_click_at are pixels of THIS picture, origin at its " +
+        "top-left; give the picture's number as look. Prefer PcObserve when the window has a tree: it is exact and much cheaper.",
+        ToolInput.Schema(("window", "string", "Window id or program name. Default: the allowed window in front.", false)));
+
+    public ToolAssessment Assess(JsonElement input, ToolContext ctx)
+    {
+        var window = session.Resolve(ToolInput.OptionalString(input, "window"));
+        return PcSession.Assess("PcScreenshot", window.Process, $"{window.Process}: {window.Title}");
+    }
+
+    public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
+    {
+        using var banner = session.Begin();
+        var window = session.Resolve(ToolInput.OptionalString(input, "window"));
+        return Task.FromResult(Take(session, window));
+    }
+
+    internal static ToolResult Take(PcSession session, WindowInfo window, string? prefix = null)
+    {
+        Snapshot shot;
+        try
+        {
+            shot = session.Desktop.Capture(window.Handle);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ToolResult.Error(ex.Message);
+        }
+        var p = shot.Picture;
+        var text = $"{prefix}Screenshot {shot.Id} of {window.Id} ({window.Process}, \"{window.Title}\"): {p.Width}x{p.Height} px" +
+                   (p.Scale < 1 ? $", the window shrunk to {p.Scale.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} of its size" : "") +
+                   $". For PcAct click_at / double_click_at use look={shot.Id} and x, y in this picture's pixels, origin at the top-left.";
+        return new ToolResult(text, Images: [new ToolImage("image/png", Convert.ToBase64String(p.Png))]);
     }
 }
 
@@ -191,16 +263,22 @@ internal sealed class PcActTool(PcSession session) : ITool
         ["type_text"] = DesktopActionKind.TypeText, ["toggle"] = DesktopActionKind.Toggle, ["expand"] = DesktopActionKind.Expand,
         ["collapse"] = DesktopActionKind.Collapse, ["select"] = DesktopActionKind.Select, ["scroll_down"] = DesktopActionKind.ScrollDown,
         ["scroll_up"] = DesktopActionKind.ScrollUp, ["focus"] = DesktopActionKind.Focus, ["hotkey"] = DesktopActionKind.Hotkey,
+        ["click_at"] = DesktopActionKind.ClickAt, ["double_click_at"] = DesktopActionKind.DoubleClickAt, ["type_focused"] = DesktopActionKind.TypeFocused,
     };
+
+    private static bool IsPixel(DesktopActionKind kind) => kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt or DesktopActionKind.TypeFocused;
 
     public ToolSpec Spec { get; } = new(
         "PcAct",
         "Does one thing in a window, then returns the new look of the window. action: invoke (click a button or menu item), set_value " +
         "(replace the text of an edit), type_text (type into an element), toggle, expand, collapse, select, scroll_down, scroll_up, focus, " +
         "or hotkey (ctrl+s, alt+tab…). element is an id from the latest PcObserve/PcAct result and look is that result's number; ids from an " +
-        "older look are refused. Password fields cannot be filled.",
+        "older look are refused. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
+        "look = its number) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
         ToolInput.Schema(
-            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus or hotkey.", true),
+            ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at or type_focused.", true),
+            ("x", "integer", "For click_at / double_click_at: x in the screenshot's pixels.", false),
+            ("y", "integer", "For click_at / double_click_at: y in the screenshot's pixels.", false),
             ("element", "string", "Element id such as e12 (not for hotkey).", false),
             ("look", "integer", "The look number the element id comes from.", false),
             ("text", "string", "The text for set_value and type_text, or the key combination for hotkey.", false),
@@ -209,12 +287,13 @@ internal sealed class PcActTool(PcSession session) : ITool
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
         var (window, action, _) = Parse(input);
-        var what = action.Kind == DesktopActionKind.Hotkey ? $"hotkey {action.Text}" : $"{action.Kind} {action.ElementId}";
+        var what = action.Kind == DesktopActionKind.Hotkey ? $"hotkey {action.Text}" : IsPixel(action.Kind) ? action.ToString() : $"{action.Kind} {action.ElementId}";
         return PcSession.Assess("PcAct", window.Process, $"{window.Process}: {what}");
     }
 
     public Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
+        using var banner = session.Begin();
         var (window, action, _) = Parse(input);
         if (session.Desktop.StopRequested())
             return Task.FromResult(ToolResult.Error("The user pressed the stop key (Pause). Nothing was done."));
@@ -222,14 +301,21 @@ internal sealed class PcActTool(PcSession session) : ITool
         var outcome = session.Desktop.Perform(window.Handle, action);
         if (!outcome.Ok)
             return Task.FromResult(ToolResult.Error($"Not done: {outcome.Message}. Look again with PcObserve."));
-        return Task.FromResult(new ToolResult($"{action}: {outcome.Message}.\n\n{session.Screen(window.Handle, out _)}"));
+        var head = $"{action}: {outcome.Message}.\n\n";
+        // After a pixel action the picture is what shows the effect (the tree may show nothing): hand it back in the same call.
+        if (IsPixel(action.Kind))
+        {
+            var shot = PcScreenshotTool.Take(session, window, head);
+            return Task.FromResult(shot.IsError ? shot : shot with { Content = shot.Content + "\n\n" + session.Screen(window.Handle, out _) });
+        }
+        return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _)));
     }
 
     private (WindowInfo Window, DesktopAction Action, string Verb) Parse(JsonElement input)
     {
         var verb = ToolInput.RequiredString(input, "action").Trim();
-        if (!Kinds.TryGetValue(verb, out var kind))
-            throw new ToolInputException($"Unknown action '{verb}'. Use {string.Join(", ", Kinds.Keys)}.");
+        if (!Kinds.TryGetValue(verb, out var kind) || IsPixel(kind) && !session.Vision)
+            throw new ToolInputException($"Unknown action '{verb}'. Use {string.Join(", ", Kinds.Where(k => session.Vision || !IsPixel(k.Value)).Select(k => k.Key))}.");
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
         var text = ToolInput.OptionalString(input, "text");
         var element = ToolInput.OptionalString(input, "element")?.Trim();
@@ -239,6 +325,22 @@ internal sealed class PcActTool(PcSession session) : ITool
             if (text is null || !PcGuard.IsValidHotkey(text))
                 throw new ToolInputException("hotkey needs text such as ctrl+s: modifiers (ctrl, alt, shift) and one key. The Windows key is not allowed.");
             return (window, new DesktopAction(kind, ToolInput.OptionalInt(input, "look") ?? 0, null, text.Trim().ToLowerInvariant()), verb);
+        }
+
+        if (kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt)
+        {
+            var shot = ToolInput.OptionalInt(input, "look") ?? throw new ToolInputException("look is required: the number of the PcScreenshot the point comes from.");
+            if (ToolInput.OptionalInt(input, "x") is not { } x || ToolInput.OptionalInt(input, "y") is not { } y)
+                throw new ToolInputException($"{verb} needs x and y: pixels of the screenshot.");
+            return (window, new DesktopAction(kind, shot, null, null, x, y), verb);
+        }
+        if (kind == DesktopActionKind.TypeFocused)
+        {
+            if (string.IsNullOrEmpty(text))
+                throw new ToolInputException("type_focused needs text.");
+            if (text.Length > 5000)
+                throw new ToolInputException("The text is longer than 5000 characters; type it in parts.");
+            return (window, new DesktopAction(kind, 0, null, text), verb);
         }
 
         if (element is null or "")
@@ -279,6 +381,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
 
     public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
+        using var banner = session.Begin();
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
         if (session.DecisionModel() is not { } model)
             return ToolResult.Error("The fast decision model is not set up (no Jev key). Use PcObserve and PcAct to do it step by step.");
@@ -358,6 +461,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
 
     public async Task<ToolResult> InvokeAsync(JsonElement input, ToolContext ctx, CancellationToken ct)
     {
+        using var banner = session.Begin();
         var policy = Parse(input);
         var window = session.Resolve(ToolInput.OptionalString(input, "window") ?? policy.App);
         if (session.DecisionModel() is not { } model)

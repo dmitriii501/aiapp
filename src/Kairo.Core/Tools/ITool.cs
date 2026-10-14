@@ -16,7 +16,7 @@ public enum RiskLevel { Read, Write, Exec, Network, System }
 public sealed record ToolAssessment(RiskLevel Risk, string Subject, string Summary, string? Detail = null);
 
 /// <summary>Diff is shown to the user only (unified format, see <see cref="UnifiedDiff"/>); the model never sees it.</summary>
-public sealed record ToolResult(string Content, bool IsError = false, string? Diff = null)
+public sealed record ToolResult(string Content, bool IsError = false, string? Diff = null, IReadOnlyList<ToolImage>? Images = null)
 {
     public static ToolResult Error(string message) => new(message, IsError: true);
 }

@@ -41,6 +41,8 @@ namespace Kairo.Core.Config;
 /// [pc]                                         # control of the desktop; user file only
 /// enabled = true
 /// apps = ["notepad.exe", "calc.exe"]              # the only programs Kairo may drive (terminals and password managers never)
+/// overlay = true                                # on-screen banner while Kairo drives the PC
+/// vision = false                                 # screenshots and clicks by coordinates (needs a model that reads images)
 /// max_steps = 25                                 # per fast run
 /// min_confidence = 0.7                           # below this the fast model hands the step to the big one
 ///
@@ -107,6 +109,12 @@ public sealed class KairoConfig
     /// <summary>Programs Kairo may control (<c>[pc] apps</c>), such as notepad.exe. Nothing else can be touched. User's file only.</summary>
     public List<string> PcApps { get; } = [];
 
+    /// <summary>The on-screen banner while PC control works (<c>[pc] overlay</c>, default true). User's file only.</summary>
+    public bool? PcOverlay { get; set; }
+
+    /// <summary>Screenshots and clicks by coordinates for a vision model (<c>[pc] vision</c>, default false). User's file only.</summary>
+    public bool? PcVision { get; set; }
+
     /// <summary>Most steps of one fast run (<c>[pc] max_steps</c>, default 25). User's file only.</summary>
     public int? PcMaxSteps { get; set; }
 
@@ -169,14 +177,14 @@ public sealed class KairoConfig
             var userHooks = config.Hooks.ToList();
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             var (decisionModel, decisionUrl, decisionDeadline) = (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs);
-            var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList());
+            var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision);
             var userRead = config.SandboxRead.ToList();
             var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
             (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs) = (decisionModel, decisionUrl, decisionDeadline);
             // Which programs may be driven is the user's call alone.
-            (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence) = (pcEnabled, pcMaxSteps, pcMinConfidence);
+            (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision);
             config.PcApps.Clear();
             config.PcApps.AddRange(pcApps);
             // The sandbox is the user's fence; a project can neither lift it nor open more of the disk to it.
@@ -314,6 +322,10 @@ public sealed class KairoConfig
             if (pc.TryGetValue("enabled", out var pcOn) && pcOn is bool enabledValue)
                 PcEnabled = enabledValue;
             PcApps.AddRange(Strings(pc, "apps"));
+            if (pc.TryGetValue("overlay", out var overlayValue) && overlayValue is bool showOverlay)
+                PcOverlay = showOverlay;
+            if (pc.TryGetValue("vision", out var visionValue) && visionValue is bool useVision)
+                PcVision = useVision;
             if (pc.TryGetValue("max_steps", out var steps) && steps is long stepCount)
                 PcMaxSteps = (int)Math.Clamp(stepCount, 1, 60);
             if (pc.TryGetValue("min_confidence", out var minConf))

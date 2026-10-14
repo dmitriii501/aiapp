@@ -169,6 +169,32 @@ public sealed class OpenAICompatibleProvider(HttpClient http, Uri baseUrl, strin
                 w.WriteString("content", r.IsError ? "Error: " + r.Content : r.Content);
                 w.WriteEndObject();
             }
+            // A tool message cannot carry a picture in this API: the pictures follow in a user message that says where they came from.
+            var pictures = m.Parts.OfType<ToolResultPart>().Where(r => r.Images is { Count: > 0 }).ToList();
+            if (pictures.Count > 0)
+            {
+                w.WriteStartObject();
+                w.WriteString("role", "user");
+                w.WriteStartArray("content");
+                foreach (var r in pictures)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("type", "text");
+                    w.WriteString("text", $"The picture(s) returned by tool call {r.ToolCallId}:");
+                    w.WriteEndObject();
+                    foreach (var image in r.Images!)
+                    {
+                        w.WriteStartObject();
+                        w.WriteString("type", "image_url");
+                        w.WriteStartObject("image_url");
+                        w.WriteString("url", $"data:{image.MediaType};base64,{image.Base64}");
+                        w.WriteEndObject();
+                        w.WriteEndObject();
+                    }
+                }
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
             if (m.Text is { Length: > 0 } userText)
                 WriteSimple(w, "user", userText);
             return;

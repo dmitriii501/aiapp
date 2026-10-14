@@ -36,6 +36,8 @@ public sealed class UiaDesktop : IDesktop
     private readonly Dictionary<string, IUIAutomationElement> _elements = new();
     private readonly Dictionary<string, (int X, int Y)> _centers = new();
     private int _version;
+    private int _shotId;
+    private (int Id, long Handle, int Left, int Top, int Width, int Height, double Scale)? _shot;
     private readonly TimeSpan _settle;
     private readonly int _maxElements;
 
@@ -283,6 +285,55 @@ public sealed class UiaDesktop : IDesktop
         return flat.Length <= max ? flat : flat[..max] + "…";
     }
 
+    // ---- Looking at pixels ----
+
+    public Snapshot Capture(long handle)
+    {
+        var hwnd = (nint)handle;
+        if (!Win32.Exists(hwnd))
+            throw new InvalidOperationException("The window is gone.");
+        // A window behind another would be photographed with what covers it.
+        if (Win32.Foreground() != hwnd)
+        {
+            Win32.BringToFront(hwnd);
+            Thread.Sleep(150);
+        }
+        var bounds = ScreenCapture.WindowBounds(handle) ?? throw new InvalidOperationException("The window has no size (minimized?).");
+        var picture = ScreenCapture.Region(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+        lock (_gate)
+        {
+            _shot = (++_shotId, handle, bounds.Left, bounds.Top, bounds.Width, bounds.Height, picture.Scale);
+            return new Snapshot(_shotId, picture);
+        }
+    }
+
+    private ActionOutcome AtPoint(long handle, nint hwnd, DesktopAction action)
+    {
+        (int Id, long Handle, int Left, int Top, int Width, int Height, double Scale)? shot;
+        lock (_gate)
+            shot = _shot;
+        if (shot is not { } s || s.Id != action.ObservationVersion || s.Handle != handle)
+            return ActionOutcome.Fail("that is not the latest screenshot of this window; take a new one with PcScreenshot");
+        if (action.X is not { } px || action.Y is not { } py || px < 0 || py < 0 || px > s.Width * s.Scale || py > s.Height * s.Scale)
+            return ActionOutcome.Fail("the point is outside the screenshot");
+        // The picture is only good while the window is where it was.
+        if (ScreenCapture.WindowBounds(handle) is not { } now || now.Left != s.Left || now.Top != s.Top || now.Width != s.Width || now.Height != s.Height)
+            return ActionOutcome.Fail("the window moved or changed size since the screenshot; take a new one");
+
+        var x = s.Left + (int)Math.Round(px / s.Scale);
+        var y = s.Top + (int)Math.Round(py / s.Scale);
+        // Whatever is on top at that point must belong to the same program: another window may have come over it.
+        var owner = Win32.ProcessAt(x, y);
+        if (owner != Win32.ProcessOf(hwnd) && Win32.RealProcess(hwnd, Win32.ProcessOf(hwnd)).Pid != owner)
+            return ActionOutcome.Fail("another program is on top at that point; the click was not made");
+
+        if (action.Kind == DesktopActionKind.DoubleClickAt)
+            Win32.DoubleClick(x, y);
+        else
+            Win32.Click(x, y);
+        return ActionOutcome.Success($"clicked at ({px}, {py})");
+    }
+
     // ---- Acting ----
 
     public ActionOutcome Perform(long handle, DesktopAction action)
@@ -300,6 +351,10 @@ public sealed class UiaDesktop : IDesktop
             ActionOutcome outcome;
             if (action.Kind == DesktopActionKind.Hotkey)
                 outcome = Hotkey(hwnd, action.Text ?? "");
+            else if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt)
+                outcome = AtPoint(handle, hwnd, action);
+            else if (action.Kind == DesktopActionKind.TypeFocused)
+                outcome = TypeFocused(hwnd, action.Text);
             else
             {
                 IUIAutomationElement element;
@@ -326,6 +381,17 @@ public sealed class UiaDesktop : IDesktop
         {
             return ActionOutcome.Fail(ex.Message);
         }
+    }
+
+    private static ActionOutcome TypeFocused(nint hwnd, string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return ActionOutcome.Fail("no text to type");
+        // Keys go to whatever has the focus: it must be this program, not one that came to the front meanwhile.
+        if (Win32.ProcessOf(Win32.Foreground()) != Win32.ProcessOf(hwnd) && !Win32.BringToFront(hwnd))
+            return ActionOutcome.Fail("the window is not in front, so the keys would go to another program");
+        Win32.TypeText(text);
+        return ActionOutcome.Success("typed");
     }
 
     private static ActionOutcome Hotkey(nint hwnd, string keys)

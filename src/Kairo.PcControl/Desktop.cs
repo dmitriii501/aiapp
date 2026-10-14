@@ -102,6 +102,9 @@ public sealed record Observation(int Version, WindowInfo Window, IReadOnlyList<U
     }
 }
 
+/// <param name="Id">The screenshot's number; ClickAt must name it, so a click can only land on a picture that was really taken.</param>
+public sealed record Snapshot(int Id, Screenshot Picture);
+
 public enum DesktopActionKind
 {
     Invoke,
@@ -115,16 +118,23 @@ public enum DesktopActionKind
     Focus,
     Hotkey,
     TypeText,
+    /// <summary>A click at a point of a screenshot (<c>X</c>, <c>Y</c> in the picture's pixels). For what the tree does not show; needs a vision model.</summary>
+    ClickAt,
+    DoubleClickAt,
+    /// <summary>Types into whatever has the keyboard focus (after a ClickAt put it somewhere).</summary>
+    TypeFocused,
 }
 
-/// <param name="ObservationVersion">The observation the element id comes from; a newer one makes the id invalid.</param>
-/// <param name="ElementId">The element of that observation (null for a hotkey).</param>
+/// <param name="ObservationVersion">The observation the element id comes from (for ClickAt, the screenshot number); a newer one makes the id invalid.</param>
+/// <param name="ElementId">The element of that observation (null for a hotkey or a click at a point).</param>
 /// <param name="Text">The text to set or type, or the key combination such as <c>ctrl+s</c>.</param>
-public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersion, string? ElementId = null, string? Text = null)
+public sealed record DesktopAction(DesktopActionKind Kind, int ObservationVersion, string? ElementId = null, string? Text = null, int? X = null, int? Y = null)
 {
     public override string ToString() => Kind switch
     {
         DesktopActionKind.Hotkey => $"hotkey {Text}",
+        DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt => $"{Kind} ({X}, {Y}) in screenshot {ObservationVersion}",
+        DesktopActionKind.TypeFocused => $"type into the focused element \"{Text}\"",
         DesktopActionKind.SetValue or DesktopActionKind.TypeText => $"{Kind} {ElementId} \"{Text}\"",
         _ => ElementId is null ? Kind.ToString() : $"{Kind} {ElementId}",
     };
@@ -152,6 +162,9 @@ public interface IDesktop
 
     /// <summary>Starts an application by its process name (it was checked against the allowed list) and returns its window when it shows up.</summary>
     WindowInfo? Launch(string application, TimeSpan wait);
+
+    /// <summary>A picture of the window as it is on the screen (it is brought to the front first). The returned number names it for ClickAt.</summary>
+    Snapshot Capture(long handle);
 
     /// <summary>True when the user pressed the stop key (Pause) since the last time this was asked.</summary>
     bool StopRequested();

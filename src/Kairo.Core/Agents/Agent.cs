@@ -139,7 +139,7 @@ public sealed class Agent(
             }
 
             ModelResponse? response = null;
-            var request = new ModelRequest(options.Model, _history, systemPrompt, tools.Specs, Effort: options.Effort);
+            var request = new ModelRequest(options.Model, ModelImages.ForRequest(_history), systemPrompt, tools.Specs, Effort: options.Effort);
 
             await foreach (var ev in provider.StreamAsync(request, ct).ConfigureAwait(false))
             {
@@ -206,7 +206,7 @@ public sealed class Agent(
                         ? (error, false)
                         : await ExecuteAsync(c, prepared.Tool!, prepared.Assessment!, ct).ConfigureAwait(false);
 
-                    results.Add(new ToolResultPart(c.Id, result.Content, result.IsError, result.Diff));
+                    results.Add(new ToolResultPart(c.Id, result.Content, result.IsError, result.Diff, result.Images));
                     yield return new ToolCallFinished(c.Id, c.Name, result, denied);
                 }
             }

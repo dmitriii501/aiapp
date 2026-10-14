@@ -27,13 +27,23 @@ internal sealed class FakeDesktop : IDesktop
     public ActionOutcome Perform(long handle, DesktopAction action)
     {
         Performed.Add(action);
-        // Like the real desktop: an element id from an older look is refused.
-        if (action.Kind != DesktopActionKind.Hotkey && action.ObservationVersion != _version)
+        // Like the real desktop: a click names the latest screenshot; an element id from an older look is refused.
+        if (action.Kind is DesktopActionKind.ClickAt or DesktopActionKind.DoubleClickAt)
+        {
+            if (action.ObservationVersion != _shotId)
+                return ActionOutcome.Fail("that is not the latest screenshot of this window; take a new one with PcScreenshot");
+        }
+        else if (action.Kind is not (DesktopActionKind.Hotkey or DesktopActionKind.TypeFocused) && action.ObservationVersion != _version)
             return ActionOutcome.Fail($"the screen changed since it was read (look {action.ObservationVersion}, latest {_version}); observe again");
         return OnPerform?.Invoke(action) ?? ActionOutcome.Success();
     }
 
     public WindowInfo? Launch(string application, TimeSpan wait) => Window;
+
+    private int _shotId;
+    public int Captures => _shotId;
+
+    public Snapshot Capture(long handle) => new(++_shotId, new Screenshot([137, 80, 78, 71, 13, 10, 26, 10], 200, 100, 0.5, 10, 20));
 
     public bool StopRequested() => Stop;
 

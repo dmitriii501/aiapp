@@ -557,3 +557,15 @@ public sealed class MenuCandidateTests
         Assert.Contains("expand:e2", keys);
     }
 }
+
+public sealed class NativeLayoutTests
+{
+    [Fact]
+    public void The_keyboard_input_structure_is_the_size_Windows_expects()
+    {
+        var input = typeof(UiaDesktop).Assembly.GetType("Kairo.PcControl.Win32")!.GetNestedType("Input", System.Reflection.BindingFlags.NonPublic)!;
+
+        // INPUT is 40 bytes on x64 and 28 on x86; SendInput returns 0 for any other size.
+        Assert.Equal(Environment.Is64BitProcess ? 40 : 28, System.Runtime.InteropServices.Marshal.SizeOf(input));
+    }
+}

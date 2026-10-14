@@ -205,6 +205,16 @@ public sealed class AnthropicProvider : IModelProvider
                     var use = new BetaToolUseBlockParam { ID = c.Id, Name = c.Name, Input = ToDictionary(c.Input) };
                     content.Add(mark is null ? use : use with { CacheControl = mark });
                     break;
+                case ToolResultPart r when r.Images is { Count: > 0 }:
+                {
+                    // The picture goes inside the tool result, after the text that says what it is.
+                    var blocks = new List<Block> { new BetaTextBlockParam { Text = r.IsError ? "Error: " + r.Content : r.Content } };
+                    foreach (var image in r.Images)
+                        blocks.Add(new BetaImageBlockParam { Source = new BetaBase64ImageSource { Data = image.Base64, MediaType = image.MediaType } });
+                    var withPictures = new BetaToolResultBlockParam { ToolUseID = r.ToolCallId, Content = blocks, IsError = r.IsError };
+                    content.Add(mark is null ? withPictures : withPictures with { CacheControl = mark });
+                    break;
+                }
                 case ToolResultPart r:
                     var result = new BetaToolResultBlockParam { ToolUseID = r.ToolCallId, Content = r.Content, IsError = r.IsError };
                     content.Add(mark is null ? result : result with { CacheControl = mark });
