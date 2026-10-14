@@ -61,6 +61,7 @@ namespace Kairo.Core.Config;
 ///
 /// [update]
 /// check = false                                 # no automatic update checks
+/// auto_install = false                          # do not download found updates by itself (default true: download, install on close)
 /// </example>
 public sealed class KairoConfig
 {
@@ -78,6 +79,9 @@ public sealed class KairoConfig
 
     /// <summary>Check for updates on start and every few hours (<c>[update] check</c>, default true).</summary>
     public bool? UpdateCheck { get; set; }
+
+    /// <summary>Download a found update at once and install it when Kairo is closed (<c>[update] auto_install</c>, default true). User's file only.</summary>
+    public bool? UpdateAuto { get; set; }
 
     /// <summary>Overrides the update feed (<c>[update] url</c>): a GitHub repository, a web address or a folder. Read from the user's file only.</summary>
     public string? UpdateUrl { get; set; }
@@ -188,13 +192,13 @@ public sealed class KairoConfig
             // Likewise the search backend: it receives what the agent searches for.
             var userMode = config.Mode;
             var userHooks = config.Hooks.ToList();
-            var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
+            var (check, auto, url, search, searxng) = (config.UpdateCheck, config.UpdateAuto, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             var (decisionModel, decisionUrl, decisionDeadline) = (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs);
             var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision, pcAutonomous, pcAllApps, pcCalibrate, pcSemantic) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps, config.PcCalibrate, config.PcSemanticChecks);
             var userRead = config.SandboxRead.ToList();
             var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
-            (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
+            (config.UpdateCheck, config.UpdateAuto, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, auto, url, search, searxng);
             (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs) = (decisionModel, decisionUrl, decisionDeadline);
             // Which programs may be driven is the user's call alone.
             (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps, config.PcCalibrate, config.PcSemanticChecks) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision, pcAutonomous, pcAllApps, pcCalibrate, pcSemantic);
@@ -389,6 +393,8 @@ public sealed class KairoConfig
         {
             if (update.TryGetValue("check", out var check) && check is bool enabled)
                 UpdateCheck = enabled;
+            if (update.TryGetValue("auto_install", out var auto) && auto is bool autoInstall)
+                UpdateAuto = autoInstall;
             UpdateUrl = String(update, "url") ?? UpdateUrl;
         }
 

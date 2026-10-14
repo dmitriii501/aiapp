@@ -89,7 +89,8 @@ public sealed partial class MainWindow : Window
             autoCheck: userConfig.UpdateCheck ?? true,
             isBusy: () => host.AnyRunning() || swarms.AnyRunning(),
             beforeRestart: ShutDown,
-            notify: status => _rpc.NotifyAsync(Notifications.UpdateChanged, status, ctx.UpdateStatus));
+            notify: status => _rpc.NotifyAsync(Notifications.UpdateChanged, status, ctx.UpdateStatus),
+            autoInstall: userConfig.UpdateAuto ?? true);
 
         HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), swarms, terminals, updates, PickFolderAsync, hostName: "desktop", pcApps: OpenApps);
 
@@ -99,6 +100,7 @@ public sealed partial class MainWindow : Window
 
         Closed += (_, _) =>
         {
+            updates.ApplyOnExit();
             updates.Dispose();
             _ = ShutDown();
         };

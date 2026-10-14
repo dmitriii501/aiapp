@@ -239,7 +239,7 @@ export interface CheckpointRollbackResult {
   skipped: string[];
 }
 
-export type UpdateState = "disabled" | "idle" | "checking" | "available" | "downloading" | "error";
+export type UpdateState = "disabled" | "idle" | "checking" | "available" | "downloading" | "ready" | "error";
 
 export interface UpdateStatus {
   state: UpdateState;

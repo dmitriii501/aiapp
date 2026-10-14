@@ -63,15 +63,40 @@ export function UpdateDialog() {
             </>
           )}
 
+          {update.state === "ready" && (
+            <>
+              <p className="update__versions">
+                Версия {update.version} загружена. Сейчас установлена {update.currentVersion}.
+              </p>
+              {update.notes && (
+                <div className="update__notes">
+                  <Markdown text={update.notes} />
+                </div>
+              )}
+              <p className="update__warning">Она установится, когда вы закроете Kairo. Можно перезапустить сразу: открытые терминалы закроются, сессии сохранятся.</p>
+              {update.error && <p className="update__error">{update.error}</p>}
+            </>
+          )}
+
           {update.state === "error" && <p className="update__error">{update.error ?? "Не удалось проверить обновления."}</p>}
           {update.state === "available" && update.error && <p className="update__error">{update.error}</p>}
         </div>
 
         <footer className="dialog__footer">
-          {update.state !== "disabled" && update.state !== "available" && (
+          {update.state !== "disabled" && update.state !== "available" && update.state !== "ready" && (
             <button type="button" className="btn btn--secondary" disabled={busy} onClick={() => void checkUpdate()}>
               {update.state === "error" ? "Повторить" : "Проверить сейчас"}
             </button>
+          )}
+          {update.state === "ready" && (
+            <>
+              <button type="button" className="btn btn--secondary" onClick={() => setOpen(false)}>
+                Позже
+              </button>
+              <button type="button" className="btn" onClick={() => void installUpdate()}>
+                Перезапустить и обновить
+              </button>
+            </>
           )}
           {update.state === "available" && (
             <>

@@ -17,6 +17,8 @@ public class UpdateTests
         public TaskCompletionSource? DownloadGate { get; set; }
         public int Checks { get; private set; }
         public UpdateOffer? Applied { get; private set; }
+        public UpdateOffer? AppliedOnExit { get; private set; }
+        public int Downloads { get; private set; }
         public TaskCompletionSource AppliedSignal { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<UpdateOffer?> CheckAsync(CancellationToken ct)
@@ -27,6 +29,7 @@ public class UpdateTests
 
         public async Task DownloadAsync(UpdateOffer offer, Action<int> progress, CancellationToken ct)
         {
+            Downloads++;
             foreach (var p in new[] { 0, 1, 2, 3, 4, 5, 50, 100 })
                 progress(p);
             if (DownloadGate is not null)
@@ -34,6 +37,8 @@ public class UpdateTests
             if (DownloadFails is not null)
                 throw DownloadFails;
         }
+
+        public void ApplyOnExit(UpdateOffer offer) => AppliedOnExit = offer;
 
         public void ApplyAndRestart(UpdateOffer offer)
         {
@@ -47,8 +52,8 @@ public class UpdateTests
     private bool _agentBusy;
     private int _beforeRestart;
 
-    private UpdateService Create(bool autoCheck = true) =>
-        new(_updater, autoCheck, () => _agentBusy, () => { _beforeRestart++; return Task.CompletedTask; }, s => { _events.Enqueue(s); return Task.CompletedTask; });
+    private UpdateService Create(bool autoCheck = true, bool autoInstall = false) =>
+        new(_updater, autoCheck, () => _agentBusy, () => { _beforeRestart++; return Task.CompletedTask; }, s => { _events.Enqueue(s); return Task.CompletedTask; }, autoInstall);
 
     private static async Task Until(Func<bool> condition)
     {
@@ -163,6 +168,90 @@ public class UpdateTests
 
         Assert.Contains("Агент начал работу", service.Status.Error);
         Assert.Null(_updater.Applied);
+    }
+
+    [Fact]
+    public async Task With_auto_install_a_found_update_is_downloaded_at_once_and_waits_for_the_next_close()
+    {
+        _updater.Offer = new UpdateOffer("0.2.0", "- faster");
+        using var service = Create(autoInstall: true);
+
+        await service.CheckAsync();
+        await Until(() => service.Status.State == "ready");
+
+        Assert.Equal(new UpdateStatus("ready", "0.1.0", "0.2.0", "- faster"), service.Status);
+        Assert.Equal(1, _updater.Downloads);
+        Assert.Null(_updater.Applied); // it does not restart on its own
+        Assert.Equal(0, _beforeRestart);
+
+        service.ApplyOnExit();
+
+        Assert.Equal("0.2.0", _updater.AppliedOnExit!.Version);
+    }
+
+    [Fact]
+    public async Task Without_auto_install_nothing_is_downloaded_until_the_user_asks()
+    {
+        _updater.Offer = new UpdateOffer("0.2.0", null);
+        using var service = Create(autoInstall: false);
+
+        await service.CheckAsync();
+        await Task.Delay(100);
+        service.ApplyOnExit();
+
+        Assert.Equal("available", service.Status.State);
+        Assert.Equal(0, _updater.Downloads);
+        Assert.Null(_updater.AppliedOnExit);
+    }
+
+    [Fact]
+    public async Task A_downloaded_update_restarts_at_once_on_request_but_not_while_an_agent_works()
+    {
+        _updater.Offer = new UpdateOffer("0.2.0", null);
+        using var service = Create(autoInstall: true);
+        await service.CheckAsync();
+        await Until(() => service.Status.State == "ready");
+
+        _agentBusy = true;
+        Assert.Throws<RpcException>(service.Install);
+        Assert.Null(_updater.Applied);
+
+        _agentBusy = false;
+        service.Install();
+        await _updater.AppliedSignal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, _updater.Downloads); // not downloaded a second time
+        Assert.Equal(1, _beforeRestart);
+    }
+
+    [Fact]
+    public async Task A_failed_automatic_download_is_an_error_and_the_next_check_tries_again()
+    {
+        _updater.Offer = new UpdateOffer("0.2.0", null);
+        _updater.DownloadFails = new InvalidOperationException("disk full");
+        using var service = Create(autoInstall: true);
+
+        await service.CheckAsync();
+        await Until(() => service.Status.State == "error");
+
+        _updater.DownloadFails = null;
+        await service.CheckAsync();
+        await Until(() => service.Status.State == "ready");
+        Assert.Equal(2, _updater.Downloads);
+    }
+
+    [Fact]
+    public void The_auto_install_switch_is_read_from_the_users_own_config_only()
+    {
+        using var dir = new Fakes.TempDir();
+        var user = Path.Combine(dir.Path, "user");
+        var project = Path.Combine(dir.Path, "project");
+        Directory.CreateDirectory(user);
+        Directory.CreateDirectory(Path.Combine(project, ".kairo"));
+        File.WriteAllText(Path.Combine(user, "config.toml"), "[update]\nauto_install = false\n");
+        File.WriteAllText(Path.Combine(project, ".kairo", "config.toml"), "[update]\nauto_install = true\n");
+
+        Assert.False(Kairo.Core.Config.KairoConfig.Load(project, user, includeProject: true).UpdateAuto);
     }
 
     [Fact]

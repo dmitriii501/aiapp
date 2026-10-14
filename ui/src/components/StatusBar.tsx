@@ -57,7 +57,7 @@ export function StatusBar() {
         </button>
         {update && (
           <button
-            className={`statusbar__item statusbar__button${update.state === "available" || update.state === "downloading" ? " statusbar__button--accent" : ""}`}
+            className={`statusbar__item statusbar__button${update.state === "available" || update.state === "downloading" || update.state === "ready" ? " statusbar__button--accent" : ""}`}
             title="Обновления"
             onClick={() => setUpdateOpen(true)}
           >
@@ -65,6 +65,11 @@ export function StatusBar() {
               <>
                 <ArrowUpCircle size={13} />
                 Обновление {update.version}
+              </>
+            ) : update.state === "ready" ? (
+              <>
+                <ArrowUpCircle size={13} />
+                Обновление {update.version} готово
               </>
             ) : update.state === "downloading" ? (
               <>Загрузка {update.progress ?? 0}%</>

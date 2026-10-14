@@ -46,6 +46,9 @@ internal sealed class VelopackUpdater : IAppUpdater
     public void ApplyAndRestart(UpdateOffer offer) =>
         _manager!.ApplyUpdatesAndRestart(_pending?.TargetFullRelease ?? throw new InvalidOperationException("Сначала проверьте обновления."));
 
+    public void ApplyOnExit(UpdateOffer offer) =>
+        _manager!.WaitExitThenApplyUpdates(_pending?.TargetFullRelease ?? throw new InvalidOperationException("Сначала проверьте обновления."), silent: true, restart: false);
+
     private static IUpdateSource CreateSource(string feed)
     {
         if (Directory.Exists(feed))
