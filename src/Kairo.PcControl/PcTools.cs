@@ -129,10 +129,39 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
     public ToolAssessment Assess(string tool, string process, string summary) =>
         new(Autonomous ? RiskLevel.Exec : RiskLevel.System, process, $"{tool}({summary})");
 
-    public string Screen(long handle, out Observation observation)
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, string> _lastDigest = new();
+
+    /// <summary>The digest of the latest look at the window, or null when it has not been looked at.</summary>
+    public string? LastDigest(long handle) => _lastDigest.GetValueOrDefault(handle);
+
+    /// <summary>
+    /// Looks at the window again after an action. When the screen still looks as it did at the previous look, waits for it to change, up
+    /// to <paramref name="waitMs"/>: a page that loads or an app that is slow answers later than the action returns. Returns the new look
+    /// and how long it waited.
+    /// </summary>
+    public Observation LookAfterAction(long handle, int waitMs, out int waitedMs)
     {
-        observation = Desktop.Observe(handle);
-        var text = $"Look {observation.Version}. Use these element ids with PcAct (they are valid until the next look).\n" + observation.ToText();
+        var before = LastDigest(handle);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var look = Desktop.Observe(handle);
+        while (before is not null && look.Digest == before && clock.ElapsedMilliseconds < waitMs && !Desktop.StopRequested())
+        {
+            Thread.Sleep(Math.Min(150, Math.Max(1, waitMs - (int)clock.ElapsedMilliseconds)));
+            look = Desktop.Observe(handle);
+        }
+        waitedMs = (int)clock.ElapsedMilliseconds;
+        return look;
+    }
+
+    public string Screen(long handle, out Observation observation, string? query = null, Observation? taken = null, int waitedMs = 0)
+    {
+        observation = taken ?? Desktop.Observe(handle);
+        var unchanged = taken is not null && waitedMs > 0 && _lastDigest.GetValueOrDefault(handle) == observation.Digest;
+        _lastDigest[handle] = observation.Digest;
+        var text = $"Look {observation.Version}. Use these element ids with PcAct (they are valid until the next look).\n" +
+                   (string.IsNullOrWhiteSpace(query) ? observation.ToText() : Filtered(observation, query));
+        if (unchanged)
+            text += $"(the window looks the same as before, even after waiting {waitedMs} ms; the action may have had no effect, or the result is not in the element list)\n";
         if (observation.Elements.Count < 3)
         {
             text += Vision
@@ -140,6 +169,26 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
                 : "The window shows almost no elements to UI Automation (a game or a custom-drawn window?); it cannot be driven this way.\n";
         }
         return text;
+    }
+
+    /// <summary>Only the elements whose role, name, id or value contains one of the words of the query (separated by |): a big window shown briefly.</summary>
+    private static string Filtered(Observation observation, string query)
+    {
+        var words = query.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var sb = new StringBuilder();
+        sb.Append("Window ").Append(observation.Window.Id).Append(" · ").Append(observation.Window.Process).Append(" · \"").Append(observation.Window.Title).Append("\"\n");
+        var matches = 0;
+        foreach (var e in observation.Elements)
+        {
+            var hay = $"{e.Role} {e.Name} {e.AutomationId} {e.Value}";
+            if (words.Any(w => hay.Contains(w, StringComparison.OrdinalIgnoreCase)))
+            {
+                sb.Append(Observation.Line(e with { Depth = 0 })).Append('\n');
+                matches++;
+            }
+        }
+        sb.Append('(').Append(matches).Append(" of ").Append(observation.Elements.Count).Append(" elements match \"").Append(query).Append("\"; look without query for the whole window)\n");
+        return sb.ToString();
     }
 }
 
@@ -208,8 +257,12 @@ internal sealed class PcObserveTool(PcSession session) : ITool
         "PcObserve",
         "Reads a window as compact text: every visible element with an id (e1, e2…), its kind, name, state and what can be done with it " +
         "(invoke, setvalue, toggle, expand, select, scroll). Menus and dialogs that are open are included. Element ids belong to this look " +
-        "only: use them with PcAct before looking again. An app that shows no elements (a game, a custom-drawn window) cannot be driven this way.",
-        ToolInput.Schema(("window", "string", "Window id from PcWindows, or the program name. Default: the allowed window in front.", false)));
+        "only: use them with PcAct before looking again. A big window (a messenger, a browser) costs a lot of context: pass query to list only the " +
+        "elements that mention one of its words (separate words with |), e.g. \"input|send|search\". An app that shows no elements (a game, a " +
+        "custom-drawn window) cannot be driven this way.",
+        ToolInput.Schema(
+            ("window", "string", "Window id from PcWindows, or the program name. Default: the allowed window in front.", false),
+            ("query", "string", "Only elements whose kind, name, id or value contains one of these words (separated by |).", false)));
 
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
@@ -221,7 +274,7 @@ internal sealed class PcObserveTool(PcSession session) : ITool
     {
         using var banner = session.Begin();
         var window = session.Resolve(ToolInput.OptionalString(input, "window"));
-        return Task.FromResult(new ToolResult(session.Screen(window.Handle, out _)));
+        return Task.FromResult(new ToolResult(session.Screen(window.Handle, out _, ToolInput.OptionalString(input, "query"))));
     }
 }
 
@@ -284,7 +337,9 @@ internal sealed class PcActTool(PcSession session) : ITool
         "Does one thing in a window, then returns the new look of the window. action: invoke (click a button or menu item), set_value " +
         "(replace the text of an edit), type_text (type into an element), toggle, expand, collapse, select, scroll_down, scroll_up, focus, " +
         "or hotkey (ctrl+s, alt+tab…). element is an id from the latest PcObserve/PcAct result and look is that result's number; ids from an " +
-        "older look are refused. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
+        "older look are refused. type_text without element types into whatever has the keyboard focus (click or focus the field first). " +
+        "If the window looks the same right after the action (a page that is loading), the tool waits for it to change before it returns; " +
+        "wait (seconds, up to 10) sets how long: use it after Enter in an address bar or a search box instead of pausing yourself. Password fields cannot be filled. With vision on, click_at / double_click_at (x, y in the pixels of a PcScreenshot, " +
         "look = its number) and type_focused (text into whatever has the focus) work where the tree shows nothing.",
         ToolInput.Schema(
             ("action", "string", "invoke, set_value, type_text, toggle, expand, collapse, select, scroll_down, scroll_up, focus, hotkey, click_at, double_click_at or type_focused.", true),
@@ -293,6 +348,7 @@ internal sealed class PcActTool(PcSession session) : ITool
             ("element", "string", "Element id such as e12 (not for hotkey).", false),
             ("look", "integer", "The look number the element id comes from.", false),
             ("text", "string", "The text for set_value and type_text, or the key combination for hotkey.", false),
+            ("wait", "number", "Seconds to wait for the window to change after the action (0–10). Default 0.4 for hotkey and invoke, else 0.15.", false),
             ("window", "string", "Window id or program name. Default: the allowed window in front.", false)));
 
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
@@ -314,12 +370,16 @@ internal sealed class PcActTool(PcSession session) : ITool
             return Task.FromResult(ToolResult.Error($"Not done: {outcome.Message}. Look again with PcObserve."));
         var head = $"{action}: {outcome.Message}.\n\n";
         // After a pixel action the picture is what shows the effect (the tree may show nothing): hand it back in the same call.
-        if (IsPixel(action.Kind))
+        if (IsPixel(action.Kind) && session.Vision)
         {
             var shot = PcScreenshotTool.Take(session, window, head);
             return Task.FromResult(shot.IsError ? shot : shot with { Content = shot.Content + "\n\n" + session.Screen(window.Handle, out _) });
         }
-        return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _)));
+        var wait = ToolInput.OptionalNumber(input, "wait") is { } seconds
+            ? (int)(Math.Clamp(seconds, 0, 10) * 1000)
+            : action.Kind is DesktopActionKind.Hotkey or DesktopActionKind.Invoke ? 400 : 150;
+        var look = session.LookAfterAction(window.Handle, wait, out var waited);
+        return Task.FromResult(new ToolResult(head + session.Screen(window.Handle, out _, taken: look, waitedMs: waited)));
     }
 
     private (WindowInfo Window, DesktopAction Action, string Verb) Parse(JsonElement input)
@@ -354,6 +414,15 @@ internal sealed class PcActTool(PcSession session) : ITool
             return (window, new DesktopAction(kind, 0, null, text), verb);
         }
 
+        if (kind == DesktopActionKind.TypeText && element is null or "")
+        {
+            // No element named: the text goes where the keyboard focus is, as after a click on the field.
+            if (string.IsNullOrEmpty(text))
+                throw new ToolInputException("type_text needs text.");
+            if (text.Length > 5000)
+                throw new ToolInputException("The text is longer than 5000 characters; type it in parts.");
+            return (window, new DesktopAction(DesktopActionKind.TypeFocused, 0, null, text), verb);
+        }
         if (element is null or "")
             throw new ToolInputException($"{verb} needs an element id from the latest look.");
         if (kind is DesktopActionKind.SetValue or DesktopActionKind.TypeText && text is null)

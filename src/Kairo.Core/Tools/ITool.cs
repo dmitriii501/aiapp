@@ -136,6 +136,9 @@ public static class ToolInput
     public static int? OptionalInt(JsonElement input, string name) =>
         input.ValueKind == JsonValueKind.Object && input.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
 
+    public static double? OptionalNumber(JsonElement input, string name) =>
+        input.ValueKind == JsonValueKind.Object && input.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d) ? d : null;
+
     public static bool OptionalBool(JsonElement input, string name) =>
         input.ValueKind == JsonValueKind.Object && input.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
 

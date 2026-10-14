@@ -207,12 +207,31 @@ public sealed class OverlayTests
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(nint window);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "FindWindowExW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern nint FindWindowEx(nint parent, nint after, string className, string? title);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
+
+    // Another Kairo on this PC (the user's own app) may have a banner window of the same class: only this process's counts.
+    private static nint OurBanner()
+    {
+        nint window = 0;
+        while ((window = FindWindowEx(0, window, ControlOverlay.ClassName, null)) != 0)
+        {
+            GetWindowThreadProcessId(window, out var pid);
+            if (pid == (uint)Environment.ProcessId)
+                return window;
+        }
+        return 0;
+    }
+
     private static bool NoDesktop =>
         Environment.GetEnvironmentVariable("KAIRO_NO_DESKTOP_TESTS") == "1"
         || !Environment.UserInteractive
         || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true" && Environment.GetEnvironmentVariable("KAIRO_DESKTOP_TESTS") != "1";
 
-    private static bool BannerVisible() => FindWindow(ControlOverlay.ClassName, null) is var w && w != 0 && IsWindowVisible(w);
+    private static bool BannerVisible() => OurBanner() is var w && w != 0 && IsWindowVisible(w);
 
     private static async Task<bool> Eventually(Func<bool> condition, int ms = 4000)
     {
@@ -272,7 +291,7 @@ public sealed class OverlayTests
 
         overlay.Dispose();
 
-        Assert.True(await Eventually(() => FindWindow(ControlOverlay.ClassName, null) == 0));
+        Assert.True(await Eventually(() => OurBanner() == 0));
         overlay.Begin().Dispose(); // after disposal Begin is a harmless no-op
     }
 }
