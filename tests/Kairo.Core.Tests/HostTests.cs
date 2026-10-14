@@ -391,6 +391,10 @@ public class HostTests : IDisposable
         Assert.Contains("ещё работает", ex.Message);
         Assert.Throws<RpcException>(() => host.PreviewCheckpoint("missing"));
         host.Cancel(id);
+        // The cancelled turn still writes to the store while it winds down; the fixture must not close the store under it.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (host.AnyRunning() && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
         await Task.Delay(50);
     }
 
