@@ -6,7 +6,7 @@ import { useStore } from "./store";
 import "./styles.css";
 
 // Mock-only demos for screenshots and UI work in a browser:
-// index.html#demo (waiting for approval), #demo-done (finished turn), #demo-compact, #settings, #mcp.
+// index.html#demo (waiting for approval), #demo-done (finished turn), #demo-compact, #demo-pc (a PC tool is running), #settings, #mcp.
 if (bridge.kind === "mock" && location.hash.startsWith("#swarm")) {
   // #swarm: a swarm running (an approval waits); #swarm-done: the finished swarm; #swarm-new: the start form.
   setTimeout(async () => {
@@ -69,6 +69,25 @@ if (bridge.kind === "mock" && location.hash.startsWith("#demo")) {
         const ask = chat?.items.find((i) => i.kind === "permission");
         if (ask?.kind === "permission") void state.respond(ask.prompt.requestId, "allow");
       });
+    }
+    if (location.hash === "#demo-pc") {
+      // A PC tool is running: the status bar says so (the real thing comes from the agent events).
+      await store.startSession(store.workspaces[0].path);
+      const id = useStore.getState().currentId!;
+      useStore.setState((st) => ({
+        chats: {
+          ...st.chats,
+          [id]: {
+            ...st.chats[id],
+            running: true,
+            items: [
+              { id: "d1", kind: "user", text: "Открой блокнот и напиши приветствие" },
+              { id: "d2", kind: "tool", toolCallId: "t1", tool: "PcPursue", summary: "PcPursue(notepad.exe: Write a greeting)", status: "running" },
+            ],
+          },
+        },
+      }));
+      return;
     }
     await store.startSession(store.workspaces[0].path);
     await useStore.getState().send(location.hash === "#demo-plan" ? "План: переименовать функцию Calc" : "Поменяй приветствие в Program.cs на Hello, Kairo");

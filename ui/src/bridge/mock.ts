@@ -298,6 +298,14 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
         settings.providers = settings.providers.map((x) => (x.id === p.provider ? { ...x, hasKey: p.key.length > 0 } : x));
         settings.ready = settings.providers.some((x) => x.id === settings.provider && x.hasKey);
         return settings;
+      case Methods.PcWindows:
+        return { apps: [{ process: "notepad.exe", title: "Безымянный — Блокнот" }, { process: "calc.exe", title: "Калькулятор" }] };
+      case Methods.PcAppAdd:
+        settings.pcApps = [...new Set([...(settings.pcApps ?? []), p.process])];
+        return settings;
+      case Methods.PcAppRemove:
+        settings.pcApps = (settings.pcApps ?? []).filter((x) => x !== p.process);
+        return settings;
       case Methods.SandboxReadAdd:
         settings.sandboxRead = [...(settings.sandboxRead ?? []), "C:/Users/dev/AppData/Local/Programs/Python/Python312"];
         return settings;

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useStore } from "../store";
-import type { Mode, ProviderId, SandboxShell } from "../bridge/protocol";
+import type { Mode, PcApp, ProviderId, SandboxShell } from "../bridge/protocol";
 import { MODE_LABELS } from "./modes";
 
 const SANDBOX_MODES: { id: SandboxShell; label: string }[] = [
@@ -24,6 +24,9 @@ export function SettingsDialog() {
   const saveSettings = useStore((s) => s.saveSettings);
   const sandboxReadAdd = useStore((s) => s.sandboxReadAdd);
   const sandboxReadRemove = useStore((s) => s.sandboxReadRemove);
+  const pcWindows = useStore((s) => s.pcWindows);
+  const pcAppAdd = useStore((s) => s.pcAppAdd);
+  const pcAppRemove = useStore((s) => s.pcAppRemove);
   const setOpen = useStore((s) => s.setSettingsOpen);
 
   const [provider, setProvider] = useState<ProviderId>(settings?.provider ?? "anthropic");
@@ -36,11 +39,16 @@ export function SettingsDialog() {
   const [jevKey, setJevKey] = useState("");
   const [sandboxShell, setSandboxShell] = useState<SandboxShell>(settings?.sandboxShell ?? "off");
   const [sandboxNetwork, setSandboxNetwork] = useState(settings?.sandboxNetwork ?? false);
+  const [pcEnabled, setPcEnabled] = useState(settings?.pcEnabled ?? false);
+  const [openApps, setOpenApps] = useState<PcApp[] | null>(null);
+  const [pickedApp, setPickedApp] = useState("");
   const [saving, setSaving] = useState(false);
 
   const hasBraveKey = settings?.braveKey ?? false;
   const hasJevKey = settings?.jevKey ?? false;
   const sandboxRead = settings?.sandboxRead ?? [];
+  const pcApps = settings?.pcApps ?? [];
+  const addable = (openApps ?? []).filter((a) => !pcApps.includes(a.process));
   const hasKey = settings?.providers.find((p) => p.id === provider)?.hasKey ?? false;
   const anthropic = provider === "anthropic";
 
@@ -63,7 +71,7 @@ export function SettingsDialog() {
     e.preventDefault();
     setSaving(true);
     const ok = await saveSettings(
-      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork },
+      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork, pcEnabled },
       key.trim() ? { provider, key: key.trim() } : undefined,
     );
     const searchOk = ok && (braveKey.trim() ? await saveSettings({}, { provider: "brave", key: braveKey.trim() }) : true);
@@ -195,6 +203,50 @@ export function SettingsDialog() {
                 <button type="button" className="btn btn--secondary" onClick={() => void saveSettings({}, { provider: "jev", key: "" })}>
                   Удалить
                 </button>
+              )}
+            </div>
+          </Field>
+
+          <label className="check">
+            <input type="checkbox" checked={pcEnabled} onChange={(e) => setPcEnabled(e.target.checked)} />
+            <span>Разрешить Kairo управлять программами из списка</span>
+          </label>
+          <Field
+            label="Программы, которыми можно управлять"
+            hint="Только открытые сейчас программы, выбираются из списка. Терминалы, менеджеры паролей и системные инструменты добавить нельзя. Каждое действие всё равно подтверждается; клавиша Pause останавливает управление."
+          >
+            <div className="path-list">
+              {pcApps.map((p) => (
+                <div key={p} className="path-list__row">
+                  <span className="path-list__path">{p}</span>
+                  <button type="button" className="btn btn--secondary" onClick={() => void pcAppRemove(p)}>
+                    Убрать
+                  </button>
+                </div>
+              ))}
+              {openApps === null ? (
+                <button type="button" className="btn btn--secondary" onClick={() => void pcWindows().then((a) => { setOpenApps(a); setPickedApp(""); })}>
+                  Добавить из открытых окон…
+                </button>
+              ) : (
+                <div className="input-row" style={{ width: "100%" }}>
+                  <select className="input" value={pickedApp} onChange={(e) => setPickedApp(e.target.value)}>
+                    <option value="">{addable.length === 0 ? "Нет подходящих открытых программ" : "Выберите программу"}</option>
+                    {addable.map((a) => (
+                      <option key={a.process} value={a.process}>
+                        {a.process} — {a.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    disabled={!pickedApp}
+                    onClick={() => void pcAppAdd(pickedApp).then(() => { setOpenApps(null); setPickedApp(""); })}
+                  >
+                    Добавить
+                  </button>
+                </div>
               )}
             </div>
           </Field>

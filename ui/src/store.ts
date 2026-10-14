@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   Decision,
   Mode,
+  PcApp,
   PermissionPrompt,
   ProviderId,
   SessionSummary,
@@ -99,6 +100,9 @@ interface State {
   cycleMode(): Promise<void>;
   respond(requestId: string, decision: Decision): Promise<void>;
   saveSettings(update: SettingsUpdate, key?: { provider: ProviderId | "brave" | "jev"; key: string }): Promise<boolean>;
+  pcWindows(): Promise<PcApp[]>;
+  pcAppAdd(process: string): Promise<void>;
+  pcAppRemove(process: string): Promise<void>;
   sandboxReadAdd(): Promise<void>;
   sandboxReadRemove(path: string): Promise<void>;
   setSettingsOpen(open: boolean): void;
@@ -430,6 +434,31 @@ export const useStore = create<State>((set, get) => {
       } catch (e) {
         fail(e);
         return false;
+      }
+    },
+
+    async pcWindows() {
+      try {
+        return (await bridge.call(Methods.PcWindows, {})).apps;
+      } catch (e) {
+        fail(e);
+        return [];
+      }
+    },
+
+    async pcAppAdd(process) {
+      try {
+        set({ settings: await bridge.call(Methods.PcAppAdd, { process }) });
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    async pcAppRemove(process) {
+      try {
+        set({ settings: await bridge.call(Methods.PcAppRemove, { process }) });
+      } catch (e) {
+        fail(e);
       }
     },
 

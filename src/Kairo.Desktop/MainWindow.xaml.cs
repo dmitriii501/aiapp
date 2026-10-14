@@ -91,7 +91,7 @@ public sealed partial class MainWindow : Window
             beforeRestart: ShutDown,
             notify: status => _rpc.NotifyAsync(Notifications.UpdateChanged, status, ctx.UpdateStatus));
 
-        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), swarms, terminals, updates, PickFolderAsync, hostName: "desktop");
+        HostMethods.Register(_rpc, host, settings, _store, new McpService(mcpManager, mcpConfig), swarms, terminals, updates, PickFolderAsync, hostName: "desktop", pcApps: OpenApps);
 
         // Servers connect and updates are checked in the background; the window does not wait for them.
         _ = mcpManager.ReloadAsync();
@@ -104,6 +104,25 @@ public sealed partial class MainWindow : Window
         };
 
         _ = InitializeWebViewAsync();
+    }
+
+    /// <summary>One entry per program with an open window, except those that can never be controlled (and Kairo itself).</summary>
+    private static IReadOnlyList<PcApp> OpenApps()
+    {
+        var guard = new Kairo.PcControl.PcGuard([]);
+        try
+        {
+            return Kairo.PcControl.UiaDesktop.Shared.Windows()
+                .Where(w => !guard.IsDenied(w.Process))
+                .GroupBy(w => w.Process)
+                .Select(g => new PcApp(g.Key, g.First().Title))
+                .OrderBy(a => a.Process)
+                .ToList();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return [];
+        }
     }
 
     /// <summary>Control of the desktop, when the user turned it on and listed programs; read at each turn so the settings apply at once.</summary>

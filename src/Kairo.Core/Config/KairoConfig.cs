@@ -147,8 +147,14 @@ public sealed class KairoConfig
     /// <summary>Files that were loaded, outermost first.</summary>
     public List<string> Sources { get; } = [];
 
+    /// <summary>
+    /// <c>%APPDATA%Kairo</c>, or the folder in <c>KAIRO_CONFIG_DIR</c> (a portable install, tests). Only the user's own environment can set it;
+    /// a project cannot.
+    /// </summary>
     public static string UserConfigDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kairo");
+        Environment.GetEnvironmentVariable("KAIRO_CONFIG_DIR") is { Length: > 0 } custom
+            ? Path.GetFullPath(custom)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kairo");
 
     public static KairoConfig Load(string workingDirectory, string? userConfigDirectory, bool includeProject = true)
     {

@@ -19,7 +19,8 @@ public static class HostMethods
         TerminalService terminals,
         UpdateService updates,
         Func<Task<string?>> pickFolder,
-        string hostName)
+        string hostName,
+        Func<IReadOnlyList<PcApp>>? pcApps = null)
     {
         var ctx = ProtocolJsonContext.Default;
 
@@ -33,6 +34,12 @@ public static class HostMethods
         rpc.Register(Methods.SettingsGet, ctx.Empty, ctx.Settings, (_, _) => Task.FromResult(settings.Get()));
         rpc.Register(Methods.SettingsUpdate, ctx.SettingsUpdate, ctx.Settings, (p, _) => Task.FromResult(settings.Update(p)));
         rpc.Register(Methods.SecretSet, ctx.SecretSetParams, ctx.Settings, (p, _) => Task.FromResult(settings.SetSecret(p)));
+
+        // Programs that could be controlled, as the host sees the open windows. Without PC control on this host the list is empty.
+        IReadOnlyList<PcApp> OpenApps() => pcApps?.Invoke() ?? [];
+        rpc.Register(Methods.PcWindows, ctx.Empty, ctx.PcWindowsResult, (_, _) => Task.FromResult(new PcWindowsResult(OpenApps())));
+        rpc.Register(Methods.PcAppAdd, ctx.PcAppParams, ctx.Settings, (p, _) => Task.FromResult(settings.AddPcApp(p.Process, OpenApps().Select(a => a.Process).ToList())));
+        rpc.Register(Methods.PcAppRemove, ctx.PcAppParams, ctx.Settings, (p, _) => Task.FromResult(settings.RemovePcApp(p.Process)));
 
         rpc.Register(Methods.SandboxReadAdd, ctx.Empty, ctx.Settings, async (_, _) =>
         {

@@ -19,6 +19,12 @@ public static partial class Methods
     public const string WorkspacePick = "workspace.pick";
 
     /// <summary>Opens the native folder picker and lets sandboxed commands read the chosen folder (a toolchain outside Program Files).</summary>
+    /// <summary>Programs with an open window that Kairo could be allowed to control (never terminals or password managers).</summary>
+    public const string PcWindows = "pc.windows";
+    /// <summary>Allows a program that is open right now. The host checks it against the open windows: the UI cannot name a program of its own.</summary>
+    public const string PcAppAdd = "pc.appAdd";
+    public const string PcAppRemove = "pc.appRemove";
+
     public const string SandboxReadAdd = "sandbox.readAdd";
     /// <summary>Takes a folder off that list. Only folders already on it are accepted.</summary>
     public const string SandboxReadRemove = "sandbox.readRemove";
@@ -114,7 +120,9 @@ public sealed record Settings(
     bool JevKey = false,
     string SandboxShell = "off",
     bool SandboxNetwork = false,
-    IReadOnlyList<string>? SandboxRead = null);
+    IReadOnlyList<string>? SandboxRead = null,
+    bool PcEnabled = false,
+    IReadOnlyList<string>? PcApps = null);
 
 /// <summary>Null fields stay unchanged. Effort "default" clears it.</summary>
 public sealed record SettingsUpdate(
@@ -124,9 +132,16 @@ public sealed record SettingsUpdate(
     string? Effort = null,
     string? Mode = null,
     string? SandboxShell = null,
-    bool? SandboxNetwork = null);
+    bool? SandboxNetwork = null,
+    bool? PcEnabled = null);
 
 public sealed record SandboxReadRemoveParams(string Path);
+
+public sealed record PcApp(string Process, string Title);
+
+public sealed record PcWindowsResult(IReadOnlyList<PcApp> Apps);
+
+public sealed record PcAppParams(string Process);
 
 /// <summary>An empty <see cref="Key"/> deletes the stored key. Provider is a model provider or "brave" (the WebSearch key).</summary>
 public sealed record SecretSetParams(string Provider, string Key);

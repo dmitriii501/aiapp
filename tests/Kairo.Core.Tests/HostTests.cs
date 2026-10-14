@@ -244,6 +244,32 @@ public class HostTests : IDisposable
     }
 
     [Fact]
+    public void PC_control_is_enabled_in_the_users_file_and_only_programs_that_are_open_can_be_added()
+    {
+        var open = new[] { "notepad.exe", "calc.exe" };
+
+        var before = _settings.Get();
+        var on = _settings.Update(new SettingsUpdate(PcEnabled: true));
+        var added = _settings.AddPcApp("Notepad.exe", open);
+        var addedAgain = _settings.AddPcApp("notepad.exe", open);
+        var withCalc = _settings.AddPcApp(@"C:\Windows\System32\calc.exe", open);
+        var removed = _settings.RemovePcApp("NOTEPAD.EXE");
+
+        Assert.False(before.PcEnabled);
+        Assert.Empty(before.PcApps!);
+        Assert.True(on.PcEnabled);
+        Assert.Equal(["notepad.exe"], added.PcApps);
+        Assert.Equal(["notepad.exe"], addedAgain.PcApps);
+        Assert.Equal(["notepad.exe", "calc.exe"], withCalc.PcApps);
+        Assert.Equal(["calc.exe"], removed.PcApps);
+        Assert.Throws<RpcException>(() => _settings.AddPcApp("chrome.exe", open)); // not open: the UI cannot name a program of its own
+        var config = _settings.LoadUser();
+        Assert.True(config.PcEnabled);
+        Assert.Equal(["calc.exe"], config.PcApps);
+        Assert.False(_settings.Update(new SettingsUpdate(PcEnabled: false)).PcEnabled);
+    }
+
+    [Fact]
     public void Each_provider_keeps_its_own_base_url()
     {
         _settings.Update(new SettingsUpdate(Provider: "anthropic", BaseUrl: "https://gateway.example.com"));

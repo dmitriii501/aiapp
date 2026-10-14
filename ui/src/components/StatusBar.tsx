@@ -1,4 +1,4 @@
-import { ArrowUpCircle, Cpu, Folder, Plug, SquareTerminal } from "lucide-react";
+import { ArrowUpCircle, Cpu, Folder, MousePointer2, Plug, SquareTerminal } from "lucide-react";
 import { useStore } from "../store";
 import { folderName } from "../format";
 
@@ -15,6 +15,9 @@ export function StatusBar() {
   const terminalOpen = useStore((s) => s.terminalOpen);
   const toggleTerminal = useStore((s) => s.toggleTerminal);
 
+  // Kairo is working in another program right now: a PC tool (not the plain list of windows) is running.
+  const pcActive = chat?.items.some((i) => i.kind === "tool" && i.status === "running" && i.tool.startsWith("Pc") && i.tool !== "PcWindows") ?? false;
+
   const enabled = mcp?.servers.filter((s) => s.status !== "disabled") ?? [];
   const ready = enabled.filter((s) => s.status === "ready").length;
   const failed = enabled.some((s) => s.status === "failed");
@@ -26,6 +29,12 @@ export function StatusBar() {
           <span className="statusbar__item" title={session.workingDirectory}>
             <Folder size={13} />
             {folderName(session.workingDirectory)}
+          </span>
+        )}
+        {pcActive && (
+          <span className="statusbar__item statusbar__item--pc" role="status" title="Клавиша Pause останавливает управление">
+            <MousePointer2 size={13} />
+            Kairo управляет ПК · Pause — стоп
           </span>
         )}
         <span className="statusbar__item">

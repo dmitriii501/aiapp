@@ -50,7 +50,9 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             JevKey: !string.IsNullOrEmpty(ProviderFactory.JevKey(Secrets)),
             SandboxShell: config.SandboxShell ?? "off",
             SandboxNetwork: config.SandboxNetwork ?? false,
-            SandboxRead: config.SandboxRead.ToList());
+            SandboxRead: config.SandboxRead.ToList(),
+            PcEnabled: config.PcEnabled ?? false,
+            PcApps: config.PcApps.ToList());
     }
 
     public Settings Update(SettingsUpdate update)
@@ -83,6 +85,14 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
                 KairoConfig.SetOrRemove(KairoConfig.Section(table, "permissions"), "mode", ModeName(md));
             if (update.SandboxShell is { } shell)
                 KairoConfig.SetOrRemove(KairoConfig.Section(table, "sandbox"), "shell", shell == "off" ? null : shell);
+            if (update.PcEnabled is { } pcEnabled)
+            {
+                var pc = KairoConfig.Section(table, "pc");
+                if (pcEnabled)
+                    pc["enabled"] = true;
+                else
+                    pc.Remove("enabled");
+            }
             if (update.SandboxNetwork is { } network)
             {
                 var section = KairoConfig.Section(table, "sandbox");
@@ -93,6 +103,46 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             }
         });
         return Get();
+    }
+
+    /// <summary>
+    /// Allows Kairo to control a program. <paramref name="open"/> is what the host sees open right now: a name the UI made up is refused,
+    /// so the list can only grow with programs the user is looking at.
+    /// </summary>
+    public Settings AddPcApp(string process, IReadOnlyCollection<string> open)
+    {
+        var name = Path.GetFileName(process.Trim()).ToLowerInvariant();
+        if (!open.Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new RpcException(RpcErrorCodes.InvalidParams, $"Программа «{process}» сейчас не открыта или управление ею невозможно. Откройте её и повторите.");
+        KairoConfig.UpdateUserFile(UserConfigDirectory, table => EditPcApps(table, list =>
+        {
+            if (!list.Contains(name, StringComparer.OrdinalIgnoreCase))
+                list.Add(name);
+        }));
+        return Get();
+    }
+
+    public Settings RemovePcApp(string process)
+    {
+        KairoConfig.UpdateUserFile(UserConfigDirectory, table => EditPcApps(table, list =>
+            list.RemoveAll(p => string.Equals(p, process, StringComparison.OrdinalIgnoreCase))));
+        return Get();
+    }
+
+    private static void EditPcApps(Tomlyn.Model.TomlTable table, Action<List<string>> edit)
+    {
+        var section = KairoConfig.Section(table, "pc");
+        var list = section.TryGetValue("apps", out var v) && v is Tomlyn.Model.TomlArray array ? array.OfType<string>().ToList() : [];
+        edit(list);
+        if (list.Count == 0)
+        {
+            section.Remove("apps");
+            return;
+        }
+        var result = new Tomlyn.Model.TomlArray();
+        foreach (var item in list)
+            result.Add(item);
+        section["apps"] = result;
     }
 
     /// <summary>Adds a folder (chosen in the native picker) that sandboxed commands may read.</summary>

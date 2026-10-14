@@ -6,6 +6,9 @@ export const Methods = {
   SettingsUpdate: "settings.update",
   SecretSet: "secret.set",
   WorkspacePick: "workspace.pick",
+  PcWindows: "pc.windows",
+  PcAppAdd: "pc.appAdd",
+  PcAppRemove: "pc.appRemove",
   SandboxReadAdd: "sandbox.readAdd",
   SandboxReadRemove: "sandbox.readRemove",
   WorkspaceList: "workspace.list",
@@ -94,6 +97,14 @@ export interface Settings {
   sandboxNetwork?: boolean;
   /** Folders the sandbox may read, picked in the native dialog. */
   sandboxRead?: string[];
+  /** Kairo may control programs from pcApps. Turned on by the user in this dialog or in config.toml; a repository cannot turn it on. */
+  pcEnabled?: boolean;
+  pcApps?: string[];
+}
+
+export interface PcApp {
+  process: string;
+  title: string;
 }
 
 export type SandboxShell = "off" | "autonomous" | "always";
@@ -106,6 +117,7 @@ export interface SettingsUpdate {
   mode?: Mode;
   sandboxShell?: SandboxShell;
   sandboxNetwork?: boolean;
+  pcEnabled?: boolean;
 }
 
 export interface Workspace {
@@ -335,6 +347,9 @@ export interface MethodMap {
   [Methods.SettingsGet]: { params: NoParams; result: Settings };
   [Methods.SettingsUpdate]: { params: SettingsUpdate; result: Settings };
   [Methods.SecretSet]: { params: { provider: ProviderId | "brave" | "jev"; key: string }; result: Settings };
+  [Methods.PcWindows]: { params: NoParams; result: { apps: PcApp[] } };
+  [Methods.PcAppAdd]: { params: { process: string }; result: Settings };
+  [Methods.PcAppRemove]: { params: { process: string }; result: Settings };
   [Methods.SandboxReadAdd]: { params: NoParams; result: Settings };
   [Methods.SandboxReadRemove]: { params: { path: string }; result: Settings };
   [Methods.WorkspacePick]: { params: NoParams; result: { workspace?: Workspace } };
