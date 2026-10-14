@@ -43,7 +43,7 @@ public sealed class PolicyRunner(IDesktop desktop, PcGuard guard, IDecisionModel
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(policy.Limits.MaxSeconds));
-        var budget = policy.Limits.MaxSteps;
+        var budget = policy.Limits.MaxSteps > 0 ? policy.Limits.MaxSteps : int.MaxValue;
 
         foreach (var step in policy.Steps)
         {
@@ -51,7 +51,7 @@ public sealed class PolicyRunner(IDesktop desktop, PcGuard guard, IDecisionModel
                 return Finish(PursueStatus.StepLimit, $"the policy used all {policy.Limits.MaxSteps} steps", step.Id);
 
             var texts = step.Texts.ToDictionary(t => t, t => policy.Texts[t]);
-            var loopOptions = (options ?? new PursueOptions()) with { MaxSteps = Math.Min(step.MaxSteps, budget) };
+            var loopOptions = (options ?? new PursueOptions()) with { MaxSteps = Math.Min(step.MaxSteps > 0 ? step.MaxSteps : int.MaxValue, budget) };
             var report = await new PursueLoop(desktop, guard, model, loopOptions, reflexes)
                 .RunAsync(window, new PursuePlan(step.Goal, step.Until, texts, step.Hotkeys), deadline.Token).ConfigureAwait(false);
 

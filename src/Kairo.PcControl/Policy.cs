@@ -36,9 +36,10 @@ public sealed record ReflexAction(ElementSelector? Invoke = null, string? Hotkey
 /// <param name="MaxFires">A reflex that fires this often in one run stops firing (it is not helping).</param>
 public sealed record Reflex(string Name, ReflexCondition When, ReflexAction Do, int MaxFires = 5);
 
-public sealed record PolicyStep(string Id, string Goal, string Until, IReadOnlyList<string> Texts, IReadOnlyList<string> Hotkeys, int MaxSteps = 15);
+public sealed record PolicyStep(string Id, string Goal, string Until, IReadOnlyList<string> Texts, IReadOnlyList<string> Hotkeys, int MaxSteps = 0);
 
-public sealed record PolicyLimits(int MaxSteps = 100, int MaxSeconds = 180);
+/// <param name="MaxSteps">0: no limit on the number of steps (the time limit still applies).</param>
+public sealed record PolicyLimits(int MaxSteps = 0, int MaxSeconds = 180);
 
 public sealed record PcPolicy(
     string Goal,
@@ -77,7 +78,7 @@ public sealed record PcPolicy(
                 sb.Append("  ").Append(r.Name).Append(": when ").Append(when).Append(" -> ").Append(r.Do.Hotkey is not null ? $"press {r.Do.Hotkey}" : $"click the element ({r.Do.Invoke})").Append('\n');
             }
         }
-        sb.Append("Limits: ").Append(Limits.MaxSteps).Append(" steps, ").Append(Limits.MaxSeconds).Append(" s. The fast model hands any unsure or hard-to-undo step back.");
+        sb.Append("Limits: ").Append(Limits.MaxSteps > 0 ? Limits.MaxSteps + " steps" : "no step limit").Append(", ").Append(Limits.MaxSeconds).Append(" s. The fast model hands any unsure or hard-to-undo step back.");
         return sb.ToString();
 
         static string Clip(string text) => text.Length <= 40 ? text : text[..40] + "…";
@@ -174,7 +175,7 @@ public static class PolicyParser
                     else
                         hotkeys.Add(key.Trim().ToLowerInvariant());
                 }
-                var max = s.TryGetProperty("max_steps", out var m) && m.TryGetInt32(out var mv) ? Math.Clamp(mv, 1, 40) : 15;
+                var max = s.TryGetProperty("max_steps", out var m) && m.TryGetInt32(out var mv) ? Math.Clamp(mv, 1, 1000) : 0;
                 steps.Add(new PolicyStep(Str(s, "id")?.Trim() is { Length: > 0 } id ? id : $"step{index}", stepGoal ?? "", until ?? "", stepTexts, hotkeys, max));
             }
             if (steps.Select(x => x.Id).Distinct().Count() != steps.Count)
@@ -204,7 +205,7 @@ public static class PolicyParser
         if (json.TryGetProperty("limits", out var limitsJson) && limitsJson.ValueKind == JsonValueKind.Object)
         {
             limits = new PolicyLimits(
-                limitsJson.TryGetProperty("max_steps", out var ms) && ms.TryGetInt32(out var msv) ? Math.Clamp(msv, 1, 300) : limits.MaxSteps,
+                limitsJson.TryGetProperty("max_steps", out var ms) && ms.TryGetInt32(out var msv) ? Math.Clamp(msv, 1, 100000) : limits.MaxSteps,
                 limitsJson.TryGetProperty("max_seconds", out var sec) && sec.TryGetInt32(out var secv) ? Math.Clamp(secv, 5, 900) : limits.MaxSeconds);
         }
 

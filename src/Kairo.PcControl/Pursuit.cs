@@ -17,13 +17,14 @@ public sealed record PursuePlan(string Subgoal, string SuccessCriterion, IReadOn
 /// <param name="StallLimit">Steps in a row after which the screen looks exactly the same: the loop gives up.</param>
 /// <param name="SettleMs">The pause right after an action. Short on purpose: the loop looks again and, if nothing moved yet, waits for the screen itself.</param>
 /// <param name="ReactWaitMs">How long to wait between looks while the screen still looks as it did before the action.</param>
+/// <param name="MaxSteps">Most steps of one run; 0 (the default) means no limit: the run ends when the goal is met, the model hands over, nothing changes, the user presses the stop key or the run is cancelled.</param>
 /// <param name="ReactRetries">How many more looks to take before the screen is taken to be unchanged.</param>
 /// <param name="SemanticChecks">Ask the fast model two more yes/no questions in the same request: is the most direct step hard to undo, and are the recent steps going in circles. A yes only ever hands a step over.</param>
 /// <param name="MaxSemanticRisk">The probability of "hard to undo" from which the step goes to the big model and the user (set from <c>kairo jev probe</c>).</param>
 /// <param name="MinProgress">Below this probability that the recent steps make progress, twice in a row, the loop hands over.</param>
 /// <param name="ConfidenceFor">The confidence a program needs, from the decision log; null uses <paramref name="MinConfidence"/> for every program.</param>
 /// <param name="Log">Where decisions are written.</param>
-public sealed record PursueOptions(int MaxSteps = 25, double MinConfidence = 0.7, double MinEffect = 0.35, int StallLimit = 3, int MaxElements = 250,
+public sealed record PursueOptions(int MaxSteps = 0, double MinConfidence = 0.7, double MinEffect = 0.35, int StallLimit = 3, int MaxElements = 250,
     int SettleMs = 30, int ReactWaitMs = 70, int ReactRetries = 2, bool SemanticChecks = true, double MaxSemanticRisk = 0.5, double MinProgress = 0.3,
     Func<string, double>? ConfidenceFor = null, IDecisionLog? Log = null);
 
@@ -161,7 +162,8 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
 
         PursueReport Finish(PursueStatus status, string reason, string? pending = null) => new(status, reason, steps, last, pending);
 
-        for (var number = 1; number <= _options.MaxSteps; number++)
+        var maxSteps = _options.MaxSteps <= 0 ? int.MaxValue : _options.MaxSteps;
+        for (var number = 1; number <= maxSteps; number++)
         {
             if (ct.IsCancellationRequested || desktop.StopRequested())
                 return Finish(PursueStatus.Aborted, ct.IsCancellationRequested ? "cancelled" : "the user pressed the stop key");
@@ -362,7 +364,7 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             Record(true, outcome.Message, actMs);
         }
 
-        return Finish(PursueStatus.StepLimit, $"{_options.MaxSteps} steps without reaching the goal");
+        return Finish(PursueStatus.StepLimit, $"{maxSteps} steps without reaching the goal");
     }
 
     private ActionOutcome SafePerform(long window, DesktopAction action, TimeSpan settle)

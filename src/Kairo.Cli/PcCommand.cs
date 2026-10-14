@@ -67,7 +67,7 @@ internal static class PcCommand
         // Open the connection first, so the first decision is as quick as the rest.
         if (model is IWarmUp warm)
             await warm.WarmUpAsync();
-        var pursue = new PursueLoop(desktop, guard, model, PcTools.OptionsFor(config, PcTools.SharedHistory(config)) with { MaxSteps = options.PcSteps ?? config.PcMaxSteps ?? 25 });
+        var pursue = new PursueLoop(desktop, guard, model, PcTools.OptionsFor(config, PcTools.SharedHistory(config)) with { MaxSteps = options.PcSteps ?? config.PcMaxSteps ?? 0 });
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
         {

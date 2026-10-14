@@ -43,7 +43,7 @@ namespace Kairo.Core.Config;
 /// apps = ["notepad.exe", "calc.exe"]              # the only programs Kairo may drive (terminals and password managers never)
 /// overlay = true                                # on-screen banner while Kairo drives the PC
 /// vision = false                                 # screenshots and clicks by coordinates (needs a model that reads images)
-/// max_steps = 25                                 # per fast run
+/// max_steps = 0                                  # per fast run; 0 or absent: no limit
 /// min_confidence = 0.7                           # below this the fast model hands the step to the big one
 ///
 /// [decision]                                   # Jev, the fast decision model for PC control; user file only
@@ -128,7 +128,7 @@ public sealed class KairoConfig
     /// <summary>PC tools stop asking in the mode without confirmations (<c>[pc] autonomous</c>, default false). User's file only.</summary>
     public bool? PcAutonomous { get; set; }
 
-    /// <summary>Most steps of one fast run (<c>[pc] max_steps</c>, default 25). User's file only.</summary>
+    /// <summary>Most steps of one fast run (<c>[pc] max_steps</c>; 0 or absent: no limit). User's file only.</summary>
     public int? PcMaxSteps { get; set; }
 
     /// <summary>Confidence below which the fast model hands a step over (<c>[pc] min_confidence</c>, default 0.7). User's file only.</summary>
@@ -348,7 +348,7 @@ public sealed class KairoConfig
             if (pc.TryGetValue("autonomous", out var autoValue) && autoValue is bool autonomous)
                 PcAutonomous = autonomous;
             if (pc.TryGetValue("max_steps", out var steps) && steps is long stepCount)
-                PcMaxSteps = (int)Math.Clamp(stepCount, 1, 60);
+                PcMaxSteps = (int)Math.Clamp(stepCount, 0, 100000);
             if (pc.TryGetValue("min_confidence", out var minConf))
             {
                 var value = minConf switch { double d => d, long l => l, _ => (double?)null };

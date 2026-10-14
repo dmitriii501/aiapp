@@ -358,6 +358,26 @@ public sealed class PursueLoopTests
     }
 
     [Fact]
+    public async Task Without_a_limit_a_run_goes_on_past_the_old_cap_of_25_steps()
+    {
+        var on = false;
+        _desktop.Elements = [El("e1", "check box", "Wrap", UiCapability.Toggle, isChecked: false)];
+        _desktop.OnPerform = _ =>
+        {
+            on = !on;
+            _desktop.Elements[0] = _desktop.Elements[0] with { Checked = on };
+            return ActionOutcome.Success();
+        };
+        // The 40th step says it is done: nothing but the model's answer ends the run.
+        var model = new ScriptedDecisionModel((req, n) => n >= 40 ? Pick(req, Key("done"), achieved: 0.95) : Pick(req, Starts("toggle:")));
+
+        var report = await Loop(model, new PursueOptions()).RunAsync(0x10, new PursuePlan("Flip", "Never"), default);
+
+        Assert.Equal(PursueStatus.Done, report.Status);
+        Assert.True(report.Steps.Count >= 39, report.Steps.Count.ToString());
+    }
+
+    [Fact]
     public async Task It_stops_at_the_step_limit()
     {
         var on = false;

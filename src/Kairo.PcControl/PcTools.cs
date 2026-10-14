@@ -27,7 +27,7 @@ public static class PcTools
     {
         var baseline = config.PcMinConfidence ?? 0.7;
         return new PursueOptions(
-            MaxSteps: config.PcMaxSteps ?? 25,
+            MaxSteps: config.PcMaxSteps ?? 0,
             MinConfidence: baseline,
             SemanticChecks: config.PcSemanticChecks != false,
             ConfidenceFor: log is DecisionHistory history ? app => history.MinConfidenceFor(app, baseline) : null,
@@ -606,7 +606,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
             ("success_criterion", "string", "How the screen looks when it is done, e.g. 'The title bar shows report.txt'.", true),
             ("texts", "object", "Named texts the fast model may type, e.g. {\"filename\": \"report.txt\"}.", false),
             ("hotkeys", "string", "Shortcuts it may press, comma separated, e.g. 'ctrl+s, enter'.", false),
-            ("max_steps", "integer", "Most steps to take (default 25, at most 60).", false),
+            ("max_steps", "integer", "Most steps to take. Default: no limit (it ends when the goal is met, the fast model hands over, nothing changes or the user stops it).", false),
             ("background", "boolean", "Start it and return at once: it runs while you plan the next sub-goal (queue that with background=true too); PcRuns await collects the results. Default false.", false),
             ("window", "string", "Window id or program name. Default: the allowed window in front.", false)));
 
@@ -633,7 +633,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
             ToolInput.RequiredString(input, "success_criterion").Trim(),
             ReadTexts(input),
             (ToolInput.OptionalString(input, "hotkeys") ?? "").Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
-        var options = session.Options with { MaxSteps = Math.Clamp(ToolInput.OptionalInt(input, "max_steps") ?? session.Options.MaxSteps, 1, 60) };
+        var options = session.Options with { MaxSteps = ToolInput.OptionalInt(input, "max_steps") is { } cap ? Math.Max(1, cap) : session.Options.MaxSteps };
 
         if (background)
         {
@@ -697,7 +697,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
         "\"steps\": [ {\"id\": \"open\", \"goal\": \"Open the Save As dialog\", \"until\": \"A Save As dialog is open\", \"hotkeys\": [\"ctrl+shift+s\"]}, " +
         "{\"id\": \"name\", \"goal\": \"Type the file name and save\", \"until\": \"The title shows report.txt\", \"texts\": [\"name\"], \"hotkeys\": [\"enter\"]} ], " +
         "\"reflexes\": [ {\"name\": \"keep\", \"when\": {\"window_title_contains\": \"Confirm\", \"element\": {\"role\": \"button\", \"name_contains\": \"Yes\"}}, \"do\": {\"invoke\": {\"role\": \"button\", \"name_contains\": \"Yes\"}}} ], " +
-        "\"limits\": {\"max_steps\": 60, \"max_seconds\": 120} }. " +
+        "\"limits\": {\"max_seconds\": 120} }. " +
         "A step needs goal and until (how the screen looks when it is done); texts and hotkeys name only what the fast model may type or press. " +
         "A reflex answers a window you already know (invoke an element found by role/name, or a hotkey) with no model call and no delay; the user " +
         "approves reflexes with the policy, so only put a risky click there when you mean it. Without reflexes the fast model still hands back " +

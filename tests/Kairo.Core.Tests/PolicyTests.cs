@@ -106,11 +106,11 @@ public sealed class PolicyParserTests
     {
         var steps = string.Join(",", Enumerable.Range(0, 31).Select(i => $$"""{"goal":"g","until":"u"}"""));
         var many = Parse($$"""{"goal":"g","target":{"app":"notepad.exe"},"steps":[{{steps}}]}""");
-        var limited = Parse("""{"goal":"g","target":{"app":"notepad.exe"},"steps":[{"goal":"a","until":"b","max_steps":999}],"limits":{"max_steps":99999,"max_seconds":1}}""");
+        var limited = Parse("""{"goal":"g","target":{"app":"notepad.exe"},"steps":[{"goal":"a","until":"b","max_steps":5000}],"limits":{"max_steps":999999,"max_seconds":1}}""");
 
         Assert.Contains(many.Errors, e => e.Contains("At most 30 steps"));
-        Assert.Equal(40, limited.Policy!.Steps[0].MaxSteps);
-        Assert.Equal(new PolicyLimits(300, 5), limited.Policy.Limits);
+        Assert.Equal(1000, limited.Policy!.Steps[0].MaxSteps);
+        Assert.Equal(new PolicyLimits(100000, 5), limited.Policy.Limits);
     }
 
     [Fact]
@@ -407,7 +407,7 @@ public sealed class PcRunPolicyToolTests
         Assert.Equal("notepad.exe", assessment.Subject);
         Assert.Contains("Write hello", assessment.Summary);
         Assert.Contains("Type the greeting", assessment.Detail);
-        Assert.Contains("Limits: 100 steps", assessment.Detail);
+        Assert.Contains("no step limit", assessment.Detail);
     }
 
     [Fact]

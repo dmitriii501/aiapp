@@ -81,11 +81,11 @@ public sealed class PcToolsTests
     [Fact]
     public void The_pc_settings_are_read_and_kept_in_range()
     {
-        var config = Config("[pc]\nenabled = true\napps = [\"notepad.exe\", \"calc.exe\"]\nmax_steps = 500\nmin_confidence = 0.1");
+        var config = Config("[pc]\nenabled = true\napps = [\"notepad.exe\", \"calc.exe\"]\nmax_steps = 500000\nmin_confidence = 0.1");
 
         Assert.True(config.PcEnabled);
         Assert.Equal(["notepad.exe", "calc.exe"], config.PcApps);
-        Assert.Equal(60, config.PcMaxSteps);
+        Assert.Equal(100000, config.PcMaxSteps);
         Assert.Equal(0.3, config.PcMinConfidence);
     }
 
