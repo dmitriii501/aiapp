@@ -326,8 +326,9 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
             // Keep one warm HTTP/2 connection: a new TLS handshake costs more than the model does.
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(10),
             PooledConnectionLifetime = TimeSpan.FromMinutes(30),
-            KeepAlivePingDelay = TimeSpan.FromSeconds(20),
-            KeepAlivePingTimeout = TimeSpan.FromSeconds(5),
+            // A connection that the network dropped without a word looks alive until a request hangs on it; pinging often finds out sooner.
+            KeepAlivePingDelay = TimeSpan.FromSeconds(10),
+            KeepAlivePingTimeout = TimeSpan.FromSeconds(3),
             KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
             EnableMultipleHttp2Connections = true,
             ConnectTimeout = TimeSpan.FromSeconds(3),

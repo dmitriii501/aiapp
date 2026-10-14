@@ -184,7 +184,15 @@ public sealed class PursueLoop(IDesktop desktop, PcGuard guard, IDecisionModel m
             DecisionResult decision;
             try
             {
-                decision = await model.DecideAsync(Request(observation, plan, candidates, previous), ct).ConfigureAwait(false);
+                try
+                {
+                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous), ct).ConfigureAwait(false);
+                }
+                catch (DecisionException ex) when (ex.Kind is DecisionFailure.Timeout or DecisionFailure.Busy or DecisionFailure.Unavailable)
+                {
+                    // One lost answer (a dead connection, a hiccup) should not end a run that was going well: ask again once, on a fresh look.
+                    decision = await model.DecideAsync(Request(observation, plan, candidates, previous), ct).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

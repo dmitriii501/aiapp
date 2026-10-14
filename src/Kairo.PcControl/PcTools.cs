@@ -80,6 +80,25 @@ internal sealed class PcSession(IDesktop desktop, PcGuard guard, Func<IDecisionM
         return found;
     }
 
+    /// <summary>
+    /// Makes sure the connection to the fast model is alive right before a run: the big model may have spent half a minute thinking, long
+    /// enough for an idle connection to die. Capped, and a failure is ignored (the first decision then opens the connection itself).
+    /// </summary>
+    public async Task WarmAsync(IDecisionModel model, CancellationToken ct)
+    {
+        if (model is not IWarmUp warm)
+            return;
+        using var cap = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cap.CancelAfter(TimeSpan.FromMilliseconds(1500));
+        try
+        {
+            await warm.WarmUpAsync(cap.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+        }
+    }
+
     public static ToolAssessment Assess(string tool, string process, string summary) => new(RiskLevel.System, process, $"{tool}({summary})");
 
     public string Screen(long handle, out Observation observation)
@@ -264,6 +283,7 @@ internal sealed class PcPursueTool(PcSession session) : ITool
         if (session.DecisionModel() is not { } model)
             return ToolResult.Error("The fast decision model is not set up (no Jev key). Use PcObserve and PcAct to do it step by step.");
 
+        await session.WarmAsync(model, ct).ConfigureAwait(false);
         var plan = new PursuePlan(
             ToolInput.RequiredString(input, "subgoal").Trim(),
             ToolInput.RequiredString(input, "success_criterion").Trim(),
@@ -343,6 +363,7 @@ internal sealed class PcRunPolicyTool(PcSession session) : ITool
         if (session.DecisionModel() is not { } model)
             return ToolResult.Error("The fast decision model is not set up (no Jev key). Use PcObserve and PcAct to do it step by step.");
 
+        await session.WarmAsync(model, ct).ConfigureAwait(false);
         var report = await new PolicyRunner(session.Desktop, session.Guard, model, session.Options).RunAsync(policy, window.Handle, ct).ConfigureAwait(false);
         return new ToolResult(Describe(report), IsError: report.Status == PursueStatus.Failed);
     }
