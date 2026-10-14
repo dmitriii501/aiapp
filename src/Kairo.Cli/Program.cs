@@ -43,6 +43,9 @@ if (options.Command == "sessions")
     return 0;
 }
 
+if (options.Command == "jev")
+    return await JevCommand.RunAsync(options, userConfigDir, new CredentialStore());
+
 if (options.Command == "swarm" && (options.Positional.FirstOrDefault() is "list" or "status" or "clean" or null))
     return SwarmCommand.Inspect(options);
 

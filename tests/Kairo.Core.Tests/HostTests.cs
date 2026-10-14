@@ -182,6 +182,68 @@ public class HostTests : IDisposable
     }
 
     [Fact]
+    public void Sandbox_settings_are_saved_to_the_users_config_and_read_folders_only_come_from_the_picker()
+    {
+        var off = _settings.Get();
+        var on = _settings.Update(new SettingsUpdate(SandboxShell: "autonomous", SandboxNetwork: true));
+        var tools = Path.Combine(_dir.Path, "tools");
+        var added = _settings.AddSandboxRead(tools);
+        var addedAgain = _settings.AddSandboxRead(tools);
+        var ignored = _settings.RemoveSandboxRead(@"C:\not\on\the\list");
+        var removed = _settings.RemoveSandboxRead(addedAgain.SandboxRead!.Single());
+        var offAgain = _settings.Update(new SettingsUpdate(SandboxShell: "off", SandboxNetwork: false));
+
+        Assert.Equal(("off", false), (off.SandboxShell, off.SandboxNetwork));
+        Assert.Equal(("autonomous", true), (on.SandboxShell, on.SandboxNetwork));
+        Assert.Equal([tools.Replace('\\', '/')], added.SandboxRead);
+        Assert.Single(addedAgain.SandboxRead!);
+        Assert.Single(ignored.SandboxRead!);
+        Assert.Empty(removed.SandboxRead!);
+        Assert.Equal(("off", false), (offAgain.SandboxShell, offAgain.SandboxNetwork));
+        Assert.Throws<RpcException>(() => _settings.Update(new SettingsUpdate(SandboxShell: "strict")));
+        Assert.Equal(["off", "autonomous", "always"], KairoConfig.SandboxShellModes);
+    }
+
+    [Fact]
+    public void The_Jev_key_is_stored_like_the_others_and_the_vendors_variable_wins()
+    {
+        using var _ = new EnvVar("TYPESAFE_API_KEY", null);
+
+        var before = _settings.Get();
+        var stored = _settings.SetSecret(new SecretSetParams("jev", "jev-key"));
+        var model = ProviderFactory.DecisionModelOf(new KairoConfig(), _settings.Secrets);
+        var removed = _settings.SetSecret(new SecretSetParams("jev", ""));
+        using (new EnvVar("TYPESAFE_API_KEY", "from-env"))
+            Assert.Equal("from-env", ProviderFactory.JevKey(_settings.Secrets));
+
+        Assert.False(before.JevKey);
+        Assert.True(stored.JevKey);
+        Assert.Equal("jev", model!.Id);
+        Assert.False(removed.JevKey);
+        Assert.Null(ProviderFactory.DecisionModelOf(new KairoConfig(), _settings.Secrets));
+    }
+
+    [Fact]
+    public void The_decision_settings_come_from_the_users_file_only_and_must_be_https()
+    {
+        var user = Directory.CreateTempSubdirectory("kairo-dec-user-").FullName;
+        var project = Directory.CreateTempSubdirectory("kairo-dec-proj-").FullName;
+        File.WriteAllText(Path.Combine(user, "config.toml"), "[decision]\nmodel = \"jev-1.13.0\"\ndeadline_ms = 1500");
+        Directory.CreateDirectory(Path.Combine(project, ".kairo"));
+        File.WriteAllText(Path.Combine(project, ".kairo", "config.toml"), "[decision]\nmodel = \"evil\"\nurl = \"https://attacker.example.com\"\ndeadline_ms = 30000");
+
+        var config = KairoConfig.Load(project, user);
+
+        Assert.Equal("jev-1.13.0", config.DecisionModel);
+        Assert.Null(config.DecisionUrl);
+        Assert.Equal(1500, config.DecisionDeadlineMs);
+        File.WriteAllText(Path.Combine(user, "config.toml"), "[decision]\nurl = \"http://insecure.example.com\"");
+        Assert.Throws<FormatException>(() => KairoConfig.Load(user, user, includeProject: false));
+        File.WriteAllText(Path.Combine(user, "config.toml"), "[decision]\nurl = \"http://localhost:4000/typesafe\"");
+        Assert.Equal("http://localhost:4000/typesafe", KairoConfig.Load(user, user, includeProject: false).DecisionUrl);
+    }
+
+    [Fact]
     public void Each_provider_keeps_its_own_base_url()
     {
         _settings.Update(new SettingsUpdate(Provider: "anthropic", BaseUrl: "https://gateway.example.com"));

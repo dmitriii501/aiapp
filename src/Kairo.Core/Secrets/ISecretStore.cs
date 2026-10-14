@@ -20,6 +20,9 @@ public static class SecretNames
 
     /// <summary>The key of the Brave Search API, used by the WebSearch tool.</summary>
     public const string BraveSearch = "brave";
+
+    /// <summary>The key of Jev (TypeSafe AI), the fast decision model for PC control.</summary>
+    public const string Jev = "jev";
 }
 
 public sealed class InMemorySecretStore : ISecretStore

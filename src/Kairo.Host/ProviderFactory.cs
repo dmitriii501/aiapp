@@ -1,8 +1,10 @@
 using Kairo.Core.Config;
+using Kairo.Core.Decisions;
 using Kairo.Core.Models;
 using Kairo.Core.Secrets;
 using Kairo.Tools.Web;
 using Kairo.Providers.Anthropic;
+using Kairo.Providers.Jev;
 using Kairo.Providers.OpenAICompatible;
 
 namespace Kairo.Host;
@@ -47,6 +49,25 @@ public static class ProviderFactory
     {
         var env = Environment.GetEnvironmentVariable("BRAVE_API_KEY");
         return !string.IsNullOrEmpty(env) ? env : secrets.Get(SecretNames.ApiKey(SecretNames.BraveSearch));
+    }
+
+    /// <summary>The Jev (TypeSafe) key: the environment variable the vendor documents wins over the stored key.</summary>
+    public static string? JevKey(ISecretStore secrets)
+    {
+        var env = Environment.GetEnvironmentVariable("TYPESAFE_API_KEY");
+        return !string.IsNullOrEmpty(env) ? env : secrets.Get(SecretNames.ApiKey(SecretNames.Jev));
+    }
+
+    /// <summary>The fast decision model, or null when there is no Jev key (PC control then runs on the big model alone).</summary>
+    public static IDecisionModel? DecisionModelOf(KairoConfig config, ISecretStore secrets)
+    {
+        if (JevKey(secrets) is not { Length: > 0 } key)
+            return null;
+        return new JevDecisionModel(
+            key,
+            baseUri: config.DecisionUrl is { } url ? new Uri(url) : null,
+            model: config.DecisionModel,
+            deadline: config.DecisionDeadlineMs is { } ms ? TimeSpan.FromMilliseconds(ms) : null);
     }
 
     public static WebSearchSettings WebSearchOf(KairoConfig config, ISecretStore secrets) =>

@@ -17,6 +17,7 @@ namespace Kairo.Protocol;
 [JsonSerializable(typeof(Settings))]
 [JsonSerializable(typeof(SettingsUpdate))]
 [JsonSerializable(typeof(SecretSetParams))]
+[JsonSerializable(typeof(SandboxReadRemoveParams))]
 [JsonSerializable(typeof(WorkspacePickResult))]
 [JsonSerializable(typeof(WorkspaceListResult))]
 [JsonSerializable(typeof(SessionListResult))]

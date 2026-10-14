@@ -34,6 +34,13 @@ public static class HostMethods
         rpc.Register(Methods.SettingsUpdate, ctx.SettingsUpdate, ctx.Settings, (p, _) => Task.FromResult(settings.Update(p)));
         rpc.Register(Methods.SecretSet, ctx.SecretSetParams, ctx.Settings, (p, _) => Task.FromResult(settings.SetSecret(p)));
 
+        rpc.Register(Methods.SandboxReadAdd, ctx.Empty, ctx.Settings, async (_, _) =>
+        {
+            var path = await pickFolder().ConfigureAwait(false);
+            return path is null ? settings.Get() : settings.AddSandboxRead(path);
+        });
+        rpc.Register(Methods.SandboxReadRemove, ctx.SandboxReadRemoveParams, ctx.Settings, (p, _) => Task.FromResult(settings.RemoveSandboxRead(p.Path)));
+
         rpc.Register(Methods.WorkspacePick, ctx.Empty, ctx.WorkspacePickResult, async (_, _) =>
         {
             var path = await pickFolder().ConfigureAwait(false);

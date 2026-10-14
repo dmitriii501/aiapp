@@ -98,7 +98,9 @@ interface State {
   setMode(mode: Mode): Promise<void>;
   cycleMode(): Promise<void>;
   respond(requestId: string, decision: Decision): Promise<void>;
-  saveSettings(update: SettingsUpdate, key?: { provider: ProviderId | "brave"; key: string }): Promise<boolean>;
+  saveSettings(update: SettingsUpdate, key?: { provider: ProviderId | "brave" | "jev"; key: string }): Promise<boolean>;
+  sandboxReadAdd(): Promise<void>;
+  sandboxReadRemove(path: string): Promise<void>;
   setSettingsOpen(open: boolean): void;
   setMcpOpen(open: boolean): void;
   openRollback(checkpointId: string): Promise<void>;
@@ -428,6 +430,22 @@ export const useStore = create<State>((set, get) => {
       } catch (e) {
         fail(e);
         return false;
+      }
+    },
+
+    async sandboxReadAdd() {
+      try {
+        set({ settings: await bridge.call(Methods.SandboxReadAdd, {}) });
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    async sandboxReadRemove(path) {
+      try {
+        set({ settings: await bridge.call(Methods.SandboxReadRemove, { path }) });
+      } catch (e) {
+        fail(e);
       }
     },
 

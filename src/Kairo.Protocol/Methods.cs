@@ -17,6 +17,11 @@ public static partial class Methods
 
     /// <summary>Opens the native folder picker. Only folders the user picked (or used before) can host a session.</summary>
     public const string WorkspacePick = "workspace.pick";
+
+    /// <summary>Opens the native folder picker and lets sandboxed commands read the chosen folder (a toolchain outside Program Files).</summary>
+    public const string SandboxReadAdd = "sandbox.readAdd";
+    /// <summary>Takes a folder off that list. Only folders already on it are accepted.</summary>
+    public const string SandboxReadRemove = "sandbox.readRemove";
     public const string WorkspaceList = "workspace.list";
 
     public const string SessionList = "session.list";
@@ -105,7 +110,11 @@ public sealed record Settings(
     string Mode,
     IReadOnlyList<ProviderStatus> Providers,
     bool Ready,
-    bool BraveKey = false);
+    bool BraveKey = false,
+    bool JevKey = false,
+    string SandboxShell = "off",
+    bool SandboxNetwork = false,
+    IReadOnlyList<string>? SandboxRead = null);
 
 /// <summary>Null fields stay unchanged. Effort "default" clears it.</summary>
 public sealed record SettingsUpdate(
@@ -113,7 +122,11 @@ public sealed record SettingsUpdate(
     string? Model = null,
     string? BaseUrl = null,
     string? Effort = null,
-    string? Mode = null);
+    string? Mode = null,
+    string? SandboxShell = null,
+    bool? SandboxNetwork = null);
+
+public sealed record SandboxReadRemoveParams(string Path);
 
 /// <summary>An empty <see cref="Key"/> deletes the stored key. Provider is a model provider or "brave" (the WebSearch key).</summary>
 public sealed record SecretSetParams(string Provider, string Key);

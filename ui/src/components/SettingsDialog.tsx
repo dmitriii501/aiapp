@@ -1,8 +1,14 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useStore } from "../store";
-import type { Mode, ProviderId } from "../bridge/protocol";
+import type { Mode, ProviderId, SandboxShell } from "../bridge/protocol";
 import { MODE_LABELS } from "./modes";
+
+const SANDBOX_MODES: { id: SandboxShell; label: string }[] = [
+  { id: "off", label: "Выключена" },
+  { id: "autonomous", label: "Для режима без подтверждений и роя" },
+  { id: "always", label: "Для всех команд" },
+];
 
 const EFFORTS = [
   { id: "default", label: "По умолчанию" },
@@ -16,6 +22,8 @@ const EFFORTS = [
 export function SettingsDialog() {
   const settings = useStore((s) => s.settings);
   const saveSettings = useStore((s) => s.saveSettings);
+  const sandboxReadAdd = useStore((s) => s.sandboxReadAdd);
+  const sandboxReadRemove = useStore((s) => s.sandboxReadRemove);
   const setOpen = useStore((s) => s.setSettingsOpen);
 
   const [provider, setProvider] = useState<ProviderId>(settings?.provider ?? "anthropic");
@@ -25,9 +33,14 @@ export function SettingsDialog() {
   const [mode, setMode] = useState<Mode>(settings?.mode ?? "default");
   const [key, setKey] = useState("");
   const [braveKey, setBraveKey] = useState("");
+  const [jevKey, setJevKey] = useState("");
+  const [sandboxShell, setSandboxShell] = useState<SandboxShell>(settings?.sandboxShell ?? "off");
+  const [sandboxNetwork, setSandboxNetwork] = useState(settings?.sandboxNetwork ?? false);
   const [saving, setSaving] = useState(false);
 
   const hasBraveKey = settings?.braveKey ?? false;
+  const hasJevKey = settings?.jevKey ?? false;
+  const sandboxRead = settings?.sandboxRead ?? [];
   const hasKey = settings?.providers.find((p) => p.id === provider)?.hasKey ?? false;
   const anthropic = provider === "anthropic";
 
@@ -50,12 +63,13 @@ export function SettingsDialog() {
     e.preventDefault();
     setSaving(true);
     const ok = await saveSettings(
-      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode },
+      { provider, model: model.trim(), baseUrl: baseUrl.trim(), effort, mode, sandboxShell, sandboxNetwork },
       key.trim() ? { provider, key: key.trim() } : undefined,
     );
     const searchOk = ok && (braveKey.trim() ? await saveSettings({}, { provider: "brave", key: braveKey.trim() }) : true);
+    const jevOk = searchOk && (jevKey.trim() ? await saveSettings({}, { provider: "jev", key: jevKey.trim() }) : true);
     setSaving(false);
-    if (searchOk) setOpen(false);
+    if (jevOk) setOpen(false);
   };
 
   return (
@@ -157,6 +171,72 @@ export function SettingsDialog() {
               )}
             </div>
           </Field>
+
+          <h3 className="dialog__section">Управление ПК</h3>
+          <Field
+            label="Ключ Jev (TypeSafe)"
+            hint={
+              hasJevKey
+                ? "Ключ сохранён в диспетчере учётных данных Windows. Введите новый, чтобы заменить. Jev быстро выбирает следующий шаг на экране; текст окна уходит на api.typesafe.ai."
+                : "Нужен для быстрых решений при управлении ПК (docs.typesafe.ai). Без него шаги принимает только большая модель: медленнее, но работает. Хранится в диспетчере учётных данных Windows."
+            }
+          >
+            <div className="input-row">
+              <input
+                className="input"
+                type="password"
+                value={jevKey}
+                onChange={(e) => setJevKey(e.target.value)}
+                placeholder={hasJevKey ? "••••••••••••" : "ключ TypeSafe"}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {hasJevKey && (
+                <button type="button" className="btn btn--secondary" onClick={() => void saveSettings({}, { provider: "jev", key: "" })}>
+                  Удалить
+                </button>
+              )}
+            </div>
+          </Field>
+
+          <h3 className="dialog__section">Песочница для команд</h3>
+          <Field
+            label="Где запускать команды Shell в песочнице"
+            hint="Команды видят только папку сессии, а сети нет. git внутри не работает. Файловые инструменты тоже остаются в этой папке."
+          >
+            <select className="input" value={sandboxShell} onChange={(e) => setSandboxShell(e.target.value as SandboxShell)}>
+              {SANDBOX_MODES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {sandboxShell !== "off" && (
+            <>
+              <label className="check">
+                <input type="checkbox" checked={sandboxNetwork} onChange={(e) => setSandboxNetwork(e.target.checked)} />
+                <span>Разрешить команде выходить в сеть</span>
+              </label>
+              <Field label="Папки, которые команды могут читать" hint="Например, установленный Python: он лежит в профиле, и без этого команда его не увидит. Папка выбирается в системном диалоге.">
+                <div className="path-list">
+                  {sandboxRead.map((p) => (
+                    <div key={p} className="path-list__row">
+                      <span className="path-list__path" title={p}>
+                        {p}
+                      </span>
+                      <button type="button" className="btn btn--secondary" onClick={() => void sandboxReadRemove(p)}>
+                        Убрать
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn--secondary" onClick={() => void sandboxReadAdd()}>
+                    Добавить папку…
+                  </button>
+                </div>
+              </Field>
+            </>
+          )}
 
           <h3 className="dialog__section">Разрешения</h3>
           <Field label="Режим для новых сессий" hint={mode === "bypass" ? "Агент выполняет всё без вопросов, включая команды Shell и запросы в сеть. Откатываются только правки файлов. Правила deny продолжают действовать. Shift+Tab переключает и на этот режим." : "В открытой сессии режим меняется сочетанием Shift+Tab."}>

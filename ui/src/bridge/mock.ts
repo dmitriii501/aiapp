@@ -291,8 +291,18 @@ export function createMock(reply: (m: RpcMessage) => void): (m: RpcMessage) => v
           settings.braveKey = p.key.length > 0;
           return settings;
         }
+        if (p.provider === "jev") {
+          settings.jevKey = p.key.length > 0;
+          return settings;
+        }
         settings.providers = settings.providers.map((x) => (x.id === p.provider ? { ...x, hasKey: p.key.length > 0 } : x));
         settings.ready = settings.providers.some((x) => x.id === settings.provider && x.hasKey);
+        return settings;
+      case Methods.SandboxReadAdd:
+        settings.sandboxRead = [...(settings.sandboxRead ?? []), "C:/Users/dev/AppData/Local/Programs/Python/Python312"];
+        return settings;
+      case Methods.SandboxReadRemove:
+        settings.sandboxRead = (settings.sandboxRead ?? []).filter((x) => x !== p.path);
         return settings;
       case Methods.WorkspacePick:
         return { workspace: workspaces[0] };

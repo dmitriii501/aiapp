@@ -46,7 +46,11 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
                 .Select(id => new ProviderStatus(id, !string.IsNullOrEmpty(ProviderFactory.ApiKey(id, Secrets))))
                 .ToList(),
             Ready: ProviderFactory.Check(config, Secrets) is null,
-            BraveKey: !string.IsNullOrEmpty(ProviderFactory.BraveKey(Secrets)));
+            BraveKey: !string.IsNullOrEmpty(ProviderFactory.BraveKey(Secrets)),
+            JevKey: !string.IsNullOrEmpty(ProviderFactory.JevKey(Secrets)),
+            SandboxShell: config.SandboxShell ?? "off",
+            SandboxNetwork: config.SandboxNetwork ?? false,
+            SandboxRead: config.SandboxRead.ToList());
     }
 
     public Settings Update(SettingsUpdate update)
@@ -57,6 +61,8 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестный уровень рассуждений «{e}».");
         if (update.BaseUrl is { Length: > 0 } url && !Uri.TryCreate(url, UriKind.Absolute, out _))
             throw new RpcException(RpcErrorCodes.InvalidParams, "Адрес API должен быть полным URL, например https://api.example.com/v1.");
+        if (update.SandboxShell is { } sandboxShell && !KairoConfig.SandboxShellModes.Contains(sandboxShell))
+            throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестный режим песочницы «{sandboxShell}».");
         var mode = update.Mode is { } m ? ParseMode(m) : (PermissionMode?)null;
 
         // The base URL belongs to the provider being saved (each has its own section).
@@ -75,13 +81,59 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
                 KairoConfig.SetOrRemove(KairoConfig.Section(table, urlSection), "base_url", baseUrl.Trim() is { Length: > 0 } b ? b : null);
             if (mode is { } md)
                 KairoConfig.SetOrRemove(KairoConfig.Section(table, "permissions"), "mode", ModeName(md));
+            if (update.SandboxShell is { } shell)
+                KairoConfig.SetOrRemove(KairoConfig.Section(table, "sandbox"), "shell", shell == "off" ? null : shell);
+            if (update.SandboxNetwork is { } network)
+            {
+                var section = KairoConfig.Section(table, "sandbox");
+                if (network)
+                    section["network"] = true;
+                else
+                    section.Remove("network");
+            }
         });
         return Get();
     }
 
+    /// <summary>Adds a folder (chosen in the native picker) that sandboxed commands may read.</summary>
+    public Settings AddSandboxRead(string path)
+    {
+        var full = Path.GetFullPath(path);
+        KairoConfig.UpdateUserFile(UserConfigDirectory, table => EditSandboxRead(table, list =>
+        {
+            if (!list.Any(p => string.Equals(Path.GetFullPath(p), full, StringComparison.OrdinalIgnoreCase)))
+                list.Add(full.Replace('\\', '/'));
+        }));
+        return Get();
+    }
+
+    /// <summary>Removes an entry that is on the list; anything else is ignored, so the UI cannot name a path of its own.</summary>
+    public Settings RemoveSandboxRead(string path)
+    {
+        KairoConfig.UpdateUserFile(UserConfigDirectory, table => EditSandboxRead(table, list =>
+            list.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase))));
+        return Get();
+    }
+
+    private static void EditSandboxRead(Tomlyn.Model.TomlTable table, Action<List<string>> edit)
+    {
+        var section = KairoConfig.Section(table, "sandbox");
+        var list = section.TryGetValue("read", out var v) && v is Tomlyn.Model.TomlArray array ? array.OfType<string>().ToList() : [];
+        edit(list);
+        if (list.Count == 0)
+        {
+            section.Remove("read");
+            return;
+        }
+        var result = new Tomlyn.Model.TomlArray();
+        foreach (var item in list)
+            result.Add(item);
+        section["read"] = result;
+    }
+
     public Settings SetSecret(SecretSetParams p)
     {
-        if (p.Provider != SecretNames.BraveSearch && !ProviderFactory.ProviderIds.Contains(p.Provider))
+        if (p.Provider is not (SecretNames.BraveSearch or SecretNames.Jev) && !ProviderFactory.ProviderIds.Contains(p.Provider))
             throw new RpcException(RpcErrorCodes.InvalidParams, $"Неизвестный провайдер «{p.Provider}».");
         var name = SecretNames.ApiKey(p.Provider);
         if (p.Key.Trim() is { Length: > 0 } key)

@@ -6,6 +6,8 @@ export const Methods = {
   SettingsUpdate: "settings.update",
   SecretSet: "secret.set",
   WorkspacePick: "workspace.pick",
+  SandboxReadAdd: "sandbox.readAdd",
+  SandboxReadRemove: "sandbox.readRemove",
   WorkspaceList: "workspace.list",
   SessionList: "session.list",
   SessionCreate: "session.create",
@@ -85,7 +87,16 @@ export interface Settings {
   ready: boolean;
   /** A Brave Search key is stored (or set in the environment): WebSearch works. */
   braveKey?: boolean;
+  /** A Jev (TypeSafe) key is stored or set in the environment: the fast decision model is available. */
+  jevKey?: boolean;
+  /** Which commands run in the Windows sandbox: off, autonomous (no-confirmation mode and swarm workers) or always. */
+  sandboxShell?: SandboxShell;
+  sandboxNetwork?: boolean;
+  /** Folders the sandbox may read, picked in the native dialog. */
+  sandboxRead?: string[];
 }
+
+export type SandboxShell = "off" | "autonomous" | "always";
 
 export interface SettingsUpdate {
   provider?: ProviderId;
@@ -93,6 +104,8 @@ export interface SettingsUpdate {
   baseUrl?: string;
   effort?: string;
   mode?: Mode;
+  sandboxShell?: SandboxShell;
+  sandboxNetwork?: boolean;
 }
 
 export interface Workspace {
@@ -321,7 +334,9 @@ export interface MethodMap {
   [Methods.AppInfo]: { params: NoParams; result: AppInfo };
   [Methods.SettingsGet]: { params: NoParams; result: Settings };
   [Methods.SettingsUpdate]: { params: SettingsUpdate; result: Settings };
-  [Methods.SecretSet]: { params: { provider: ProviderId | "brave"; key: string }; result: Settings };
+  [Methods.SecretSet]: { params: { provider: ProviderId | "brave" | "jev"; key: string }; result: Settings };
+  [Methods.SandboxReadAdd]: { params: NoParams; result: Settings };
+  [Methods.SandboxReadRemove]: { params: { path: string }; result: Settings };
   [Methods.WorkspacePick]: { params: NoParams; result: { workspace?: Workspace } };
   [Methods.WorkspaceList]: { params: NoParams; result: { workspaces: Workspace[] } };
   [Methods.SessionList]: { params: NoParams; result: { sessions: SessionSummary[] } };

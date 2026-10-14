@@ -32,6 +32,7 @@ internal sealed class CliOptions
           kairo sessions             list recent sessions
           kairo swarm "<goal>"       run a swarm: a lead and workers in git worktrees (see docs/specs/swarm.md)
           kairo swarm list | status <id> | resume <id> | clean <id>   (clean removes the workers' worktrees and merged branches)
+          kairo jev bench [n]        measure the Jev decision model: latency (cold, warm, parallel) and accuracy on English and Russian UI
 
         Options:
           --provider <id>            anthropic (default) | openai-compatible
@@ -48,7 +49,7 @@ internal sealed class CliOptions
           --concurrency <n>          swarm: model requests at once (default 3)
           --no-mcp                   do not connect MCP servers from %APPDATA%\Kairo\mcp.json
 
-        Keys: ANTHROPIC_API_KEY for anthropic, KAIRO_API_KEY for openai-compatible (optional).
+        Keys: ANTHROPIC_API_KEY for anthropic, KAIRO_API_KEY for openai-compatible (optional), TYPESAFE_API_KEY for Jev.
         Settings: %APPDATA%\Kairo\config.toml and .kairo\config.toml in the project.
         """;
 
@@ -76,11 +77,12 @@ internal sealed class CliOptions
                 case "--no-mcp": o.NoMcp = true; break;
                 case "sessions" when o.Command is null: o.Command = "sessions"; break;
                 case "swarm" when o.Command is null: o.Command = "swarm"; break;
+                case "jev" when o.Command is null: o.Command = "jev"; break;
                 case "--workers": o.Workers = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--max-tokens": o.MaxTokens = long.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--max-minutes": o.MaxMinutes = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--concurrency": o.Concurrency = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
-                case not null when o.Command == "swarm" && !a.StartsWith('-'): o.Positional.Add(a); break;
+                case not null when o.Command is "swarm" or "jev" && !a.StartsWith('-'): o.Positional.Add(a); break;
                 default: throw new ArgumentException($"Unknown argument '{a}'. Run 'kairo --help'.");
             }
         }

@@ -38,6 +38,10 @@ namespace Kairo.Core.Config;
 /// command = "pwsh -File C:/hooks/check.ps1"      # gets the event as JSON on stdin; exit code 2 blocks
 /// timeout = 30
 ///
+/// [decision]                                   # Jev, the fast decision model for PC control; user file only
+/// model = "jev-1.13.0"                           # pinned: confidence thresholds are tuned per release
+/// deadline_ms = 3000                             # slower than this and the step goes to the big model
+///
 /// [sandbox]                                    # user file only
 /// shell = "autonomous"                           # off | autonomous (no-confirmation mode, swarm workers) | always
 /// network = false                                # outgoing connections from sandboxed commands
@@ -91,6 +95,15 @@ public sealed class KairoConfig
     /// <summary>Memory limit of everything one sandboxed command starts, in MB (<c>[sandbox] memory_mb</c>). User's file only.</summary>
     public int? SandboxMemoryMb { get; set; }
 
+    /// <summary>Pinned Jev model (<c>[decision] model</c>, default <c>jev-1.13.0</c>). User's file only.</summary>
+    public string? DecisionModel { get; set; }
+
+    /// <summary>Address of the Jev API or a gateway in front of it (<c>[decision] url</c>). It receives what the screen shows: user's file only.</summary>
+    public string? DecisionUrl { get; set; }
+
+    /// <summary>How long one decision may take before the caller escalates (<c>[decision] deadline_ms</c>, default 3000). User's file only.</summary>
+    public int? DecisionDeadlineMs { get; set; }
+
     /// <summary>Hooks (<c>[[hooks]]</c>). Commands that run on the user's machine: read from the user's file only.</summary>
     public List<HookConfig> Hooks { get; } = [];
 
@@ -131,10 +144,12 @@ public sealed class KairoConfig
             var userMode = config.Mode;
             var userHooks = config.Hooks.ToList();
             var (check, url, search, searxng) = (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
+            var (decisionModel, decisionUrl, decisionDeadline) = (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs);
             var userRead = config.SandboxRead.ToList();
             var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, url, search, searxng);
+            (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs) = (decisionModel, decisionUrl, decisionDeadline);
             // The sandbox is the user's fence; a project can neither lift it nor open more of the disk to it.
             (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb) = (sandbox, sandboxNetwork, sandboxMemory);
             config.SandboxRead.Clear();
@@ -263,6 +278,19 @@ public sealed class KairoConfig
         {
             WebSearch = String(web, "search") ?? WebSearch;
             SearxngUrl = String(web, "searxng_url") ?? SearxngUrl;
+        }
+
+        if (table.TryGetValue("decision", out var decisionValue) && decisionValue is TomlTable decision)
+        {
+            DecisionModel = String(decision, "model") ?? DecisionModel;
+            if (String(decision, "url") is { } decisionUrl)
+            {
+                if (!Uri.TryCreate(decisionUrl, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps && !parsed.IsLoopback)
+                    throw new FormatException($"{source}: [decision] url must be an https address (or a local one), not \"{decisionUrl}\".");
+                DecisionUrl = decisionUrl;
+            }
+            if (decision.TryGetValue("deadline_ms", out var deadline) && deadline is long ms)
+                DecisionDeadlineMs = (int)Math.Clamp(ms, 200, 30_000);
         }
 
         if (table.TryGetValue("sandbox", out var sb) && sb is TomlTable sandbox)
