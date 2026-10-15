@@ -25,7 +25,8 @@ public sealed record ModelCallCompleted(string? StopReason, Usage Usage) : Agent
 public sealed record AgentFinished(string Reason) : AgentEvent;
 
 /// <summary>The history is about to be replaced by a summary (a model call that takes a few seconds).</summary>
-public sealed record ContextCompacting : AgentEvent;
+/// <param name="Reason">What made it necessary (the sizes behind the decision), for the session's log.</param>
+public sealed record ContextCompacting(string? Reason = null) : AgentEvent;
 
 /// <summary>The history was replaced by a summary. Sizes are estimates in tokens.</summary>
 public sealed record ContextCompacted(long TokensBefore, long TokensAfter, string Summary) : AgentEvent;
@@ -104,11 +105,12 @@ public sealed class Agent(
             toolContext.Subagents = new SubagentRunner(provider, tools, permissions, prompt, toolContext, systemPrompt, options, Hooks);
 
         var compactions = 0;
-        if (ShouldCompact(compactions))
+        if (CompactionReason(compactions) is { } startReason)
         {
             compactions++;
-            yield return new ContextCompacting();
-            yield return await CompactAsync(null, ct).ConfigureAwait(false);
+            yield return new ContextCompacting(startReason);
+            var (done, failure) = await TryCompactAsync(ct).ConfigureAwait(false);
+            yield return done is not null ? done : new HookNotice($"Не удалось сжать контекст ({failure}). Продолжаю без сжатия.");
         }
 
         if (!options.Subagent && Hooks is { } promptHooks && promptHooks.Has(HookEvent.UserPromptSubmit))
@@ -132,11 +134,12 @@ public sealed class Agent(
         for (var call = 0; call < (options.MaxModelCalls > 0 ? options.MaxModelCalls : int.MaxValue); call++)
         {
             // Long single turns (many tool calls) can fill the window too: summarize between model calls.
-            if (call > 0 && ShouldCompact(compactions))
+            if (call > 0 && CompactionReason(compactions) is { } midReason)
             {
                 compactions++;
-                yield return new ContextCompacting();
-                yield return await CompactAsync(null, ct).ConfigureAwait(false);
+                yield return new ContextCompacting(midReason);
+                var (done, failure) = await TryCompactAsync(ct).ConfigureAwait(false);
+                yield return done is not null ? done : new HookNotice($"Не удалось сжать контекст ({failure}). Продолжаю без сжатия.");
             }
 
             ModelResponse? response = null;
@@ -223,9 +226,35 @@ public sealed class Agent(
         yield return new AgentFinished("max_model_calls");
     }
 
-    private bool ShouldCompact(int doneThisRun) =>
-        options.ContextWindow > 0 && doneThisRun < MaxAutoCompactionsPerRun && _history.Count > 1
-        && Math.Max(_lastContextTokens, Compaction.EstimateTokens(_history, systemPrompt)) >= options.ContextWindow * options.CompactAt;
+    /// <summary>
+    /// Why the history should be summarized now, or null when it should not. The size the model reported is a better guide than our
+    /// estimate, unless it is absurd: a gateway that counts wrongly (a hundred thousand tokens for a conversation of a thousand) must not
+    /// make Kairo throw the conversation away.
+    /// </summary>
+    private string? CompactionReason(int doneThisRun)
+    {
+        if (options.ContextWindow <= 0 || doneThisRun >= MaxAutoCompactionsPerRun || _history.Count <= 1)
+            return null;
+        var estimate = Compaction.EstimateTokens(_history, systemPrompt);
+        var reported = _lastContextTokens > estimate * 3 + 30_000 ? 0 : _lastContextTokens;
+        var limit = options.ContextWindow * options.CompactAt;
+        return Math.Max(reported, estimate) >= limit
+            ? $"the model reported {_lastContextTokens} tokens, we estimate {estimate}, the limit is {limit:0}{(reported == 0 && _lastContextTokens > 0 ? " (the reported size was not believed)" : "")}"
+            : null;
+    }
+
+    /// <summary>An automatic compaction that fails (the model sent an empty summary, a provider error) must not end the turn: it goes on with the history as it is.</summary>
+    private async Task<(ContextCompacted? Done, string? Failure)> TryCompactAsync(CancellationToken ct)
+    {
+        try
+        {
+            return (await CompactAsync(null, ct).ConfigureAwait(false), null);
+        }
+        catch (ModelProviderException ex)
+        {
+            return (null, ex.Message.ReplaceLineEndings(" "));
+        }
+    }
 
     /// <summary>
     /// Replaces the history with a model-written summary (the stored log keeps everything; see <see cref="Compaction"/>).

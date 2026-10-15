@@ -153,6 +153,45 @@ public class CompactionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_size_the_gateway_reports_that_is_far_above_our_own_count_does_not_trigger_a_summary()
+    {
+        File.WriteAllText(Path.Combine(_dir.Path, "a.txt"), "hello");
+        var toolCall = new ModelResponse(
+            new ChatMessage(ChatRole.Assistant, [new ToolCallPart("c1", "Read", Json.Of($$"""{"file_path":"{{Json.Str(Path.Combine(_dir.Path, "a.txt"))}}"}"""))]),
+            "tool_use", new Usage(150_000, 5)); // "150 000 tokens" for a conversation of a few hundred characters
+        var model = new ScriptedProvider(toolCall, Say("finished"));
+        var agent = NewAgent(model, [], new AgentOptions("m", ContextWindow: 128_000, CompactAt: 0.8));
+
+        var events = new List<AgentEvent>();
+        await foreach (var ev in agent.RunAsync("read a.txt then answer"))
+            events.Add(ev);
+
+        Assert.DoesNotContain(events, e => e is ContextCompacting);
+        Assert.Equal(2, model.Requests.Count); // the tool call and the answer: nothing was thrown away
+    }
+
+    [Fact]
+    public async Task A_summary_that_comes_back_empty_does_not_end_the_turn()
+    {
+        var big = new string('x', 4000);
+        var empty = new ModelResponse(new ChatMessage(ChatRole.Assistant, []), "end_turn", new Usage(1, 0));
+        var model = new ScriptedProvider(empty, Say("the answer"));
+        var agent = NewAgent(model, [ChatMessage.UserText(big), Assistant(big)], new AgentOptions("m", ContextWindow: 1000, CompactAt: 0.5));
+
+        var events = new List<AgentEvent>();
+        await foreach (var ev in agent.RunAsync("go on"))
+            events.Add(ev);
+
+        Assert.Contains(events, e => e is ContextCompacting { Reason: { Length: > 0 } });
+        Assert.Contains(events, e => e is HookNotice n && n.Text.Contains("Не удалось сжать контекст"));
+        Assert.DoesNotContain(events, e => e is ContextCompacted);
+        var finished = Assert.IsType<AgentFinished>(events[^1]);
+        Assert.Equal("end_turn", finished.Reason);
+        Assert.Contains(agent.History, m => m.Role == ChatRole.Assistant && m.Text == "the answer");
+        Assert.Contains(agent.History, m => m.Text == big); // the history is still there
+    }
+
+    [Fact]
     public async Task A_window_too_small_for_any_round_does_not_loop_on_summaries()
     {
         var responses = Enumerable.Range(0, 20).Select(_ => Say("s")).ToArray();

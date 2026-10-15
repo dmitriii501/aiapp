@@ -510,7 +510,9 @@ public sealed class AgentHost(
                     case HookNotice n:
                         await _notify(new AgentEventDto(id, "notice", Text: n.Text)).ConfigureAwait(false);
                         break;
-                    case ContextCompacting:
+                    case ContextCompacting compacting:
+                        if (compacting.Reason is { Length: > 0 } sizes)
+                            Note(id, "compaction", sizes);
                         await _notify(new AgentEventDto(id, "compacting")).ConfigureAwait(false);
                         break;
                     case ContextCompacted c:
