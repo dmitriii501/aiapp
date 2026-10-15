@@ -54,6 +54,9 @@ if (options.Command == "pc")
 if (options.Command == "sandbox")
     return await SandboxCommand.RunAsync(options, userConfigDir);
 
+if (options.Command == "models")
+    return await ModelsCommand.RunAsync(options, userConfigDir, new CredentialStore());
+
 if (options.Command == "jev")
     return await JevCommand.RunAsync(options, userConfigDir, new CredentialStore());
 

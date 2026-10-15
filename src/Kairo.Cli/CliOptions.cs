@@ -39,6 +39,7 @@ internal sealed class CliOptions
           kairo swarm "<goal>"       run a swarm: a lead and workers in git worktrees (see docs/specs/swarm.md)
           kairo swarm list | status <id> | resume <id> | clean <id>   (clean removes the workers' worktrees and merged branches)
           kairo pc run <app.exe> "<sub-goal>" "<success>"   the fast loop (Jev) on one program, with timings: --text name=value, --hotkeys "ctrl+s", --launch, --steps N
+          kairo models list | bench [n] [ids…]   what the gateway offers, and how fast each model answers a tiny request
           kairo jev bench [n]        measure the Jev decision model: latency (cold, warm, parallel) and accuracy on English and Russian UI
 
         Options:
@@ -85,6 +86,7 @@ internal sealed class CliOptions
                 case "sessions" when o.Command is null: o.Command = "sessions"; break;
                 case "swarm" when o.Command is null: o.Command = "swarm"; break;
                 case "jev" when o.Command is null: o.Command = "jev"; break;
+                case "models" when o.Command is null: o.Command = "models"; break;
                 case "pc" when o.Command is null: o.Command = "pc"; break;
                 case "sandbox" when o.Command is null: o.Command = "sandbox"; break;
                 case "--text": o.PcTexts.Add(Next()); break;
@@ -96,7 +98,7 @@ internal sealed class CliOptions
                 case "--max-tokens": o.MaxTokens = long.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--max-minutes": o.MaxMinutes = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--concurrency": o.Concurrency = int.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
-                case not null when o.Command is "swarm" or "jev" or "pc" or "sandbox" or "sessions" && !a.StartsWith('-'): o.Positional.Add(a); break;
+                case not null when o.Command is "swarm" or "jev" or "pc" or "sandbox" or "sessions" or "models" && !a.StartsWith('-'): o.Positional.Add(a); break;
                 default: throw new ArgumentException($"Unknown argument '{a}'. Run 'kairo --help'.");
             }
         }
