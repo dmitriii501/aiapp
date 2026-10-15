@@ -11,6 +11,6 @@ public static class BuiltinTools
     public static IReadOnlyList<ITool> All(Func<WebSearchSettings>? web = null, HttpMessageHandler? webHandler = null, string? userConfigDirectory = null) =>
     [
         new ReadTool(), new WriteTool(), new EditTool(), new GlobTool(), new GrepTool(), new ShellTool(), new TodoWriteTool(), new ExitPlanModeTool(), new TaskTool(), new SkillTool(userConfigDirectory),
-        new WebFetchTool(webHandler), new WebSearchTool(web ?? (() => new WebSearchSettings()), webHandler), new DownloadTool(webHandler),
+        new WebFetchTool(webHandler), new WebSearchTool(web ?? (() => new WebSearchSettings()), webHandler), new DownloadTool(webHandler), new GoalCompleteTool(), new GoalBlockedTool(),
     ];
 }

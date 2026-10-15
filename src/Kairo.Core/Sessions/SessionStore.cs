@@ -57,6 +57,12 @@ public sealed class SessionStore : IDisposable
                 text        TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS session_events_by_session ON session_events(session_id, at);
+            CREATE TABLE IF NOT EXISTS session_goals (
+                session_id  TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                text        TEXT NOT NULL,
+                status      TEXT NOT NULL,
+                detail      TEXT
+            );
             CREATE TABLE IF NOT EXISTS workspaces (
                 path        TEXT PRIMARY KEY COLLATE NOCASE,
                 last_used   TEXT NOT NULL
@@ -166,6 +172,26 @@ public sealed class SessionStore : IDisposable
     public void AddEvent(string sessionId, string kind, string text) =>
         Execute("INSERT INTO session_events (session_id, at, kind, text) VALUES ($id, $at, $kind, $text)",
             ("$id", sessionId), ("$at", DateTimeOffset.UtcNow.ToString("O")), ("$kind", kind), ("$text", text.Length > 600 ? text[..600] : text));
+
+    /// <summary>Keeps the session's /goal (one per session), so it survives a restart of Kairo.</summary>
+    public void SaveGoal(string sessionId, Kairo.Core.Agents.GoalState goal) =>
+        Execute("INSERT INTO session_goals (session_id, text, status, detail) VALUES ($id, $text, $status, $detail) "
+            + "ON CONFLICT(session_id) DO UPDATE SET text = $text, status = $status, detail = $detail",
+            ("$id", sessionId), ("$text", goal.Text), ("$status", goal.Status.ToString()), ("$detail", (object?)goal.Detail ?? DBNull.Value));
+
+    public Kairo.Core.Agents.GoalState? LoadGoal(string sessionId)
+    {
+        lock (_lock)
+        {
+            using var cmd = Command("SELECT text, status, detail FROM session_goals WHERE session_id = $id", ("$id", sessionId));
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read() || !Enum.TryParse<Kairo.Core.Agents.GoalStatus>(reader.GetString(1), out var status))
+                return null;
+            return new Kairo.Core.Agents.GoalState(reader.GetString(0), status, reader.IsDBNull(2) ? null : reader.GetString(2));
+        }
+    }
+
+    public void ClearGoal(string sessionId) => Execute("DELETE FROM session_goals WHERE session_id = $id", ("$id", sessionId));
 
     public IReadOnlyList<SessionEvent> LoadEvents(string sessionId)
     {

@@ -98,7 +98,7 @@ public sealed class AgentHost(
 
         var live = GetLive(sessionId);
         var cwd = live.Info.WorkingDirectory;
-        var config = LoadConfig(cwd);
+        LoadConfig(cwd); // a broken settings file is reported here, before anything starts
 
         // /command: built-ins run here; custom commands and skills become a hidden note that goes to the model with the typed text.
         string? commandNote = null;
@@ -112,6 +112,15 @@ public sealed class AgentHost(
                 commandNote = prompt.Note;
                 break;
         }
+
+        return BeginTurn(live, text, commandNote);
+    }
+
+    /// <summary>Starts a turn: the user's message, or one that an active goal pushes on. Throws when the session is busy.</summary>
+    private bool BeginTurn(LiveSession live, string text, string? commandNote)
+    {
+        var sessionId = live.Info.Id;
+        var config = LoadConfig(live.Info.WorkingDirectory);
 
         IModelProvider provider;
         try
@@ -142,6 +151,9 @@ public sealed class AgentHost(
         live.PendingNote = null;
         if (commandNote is not null)
             note = note is null ? commandNote : note + "\n\n" + commandNote;
+        // Every turn of an active goal carries its instructions, so a long job does not drift into asking whether to go on.
+        if (live.Tools.Goal is { Status: GoalStatus.Active } goal)
+            note = note is null ? goal.Instructions() : note + "\n\n" + goal.Instructions();
 
         var agent = MakeAgent(live, config, provider);
         _ = Task.Run(() => RunTurnAsync(live, agent, text, note, turn, ProviderFactory.ProviderOf(config)));
@@ -168,6 +180,8 @@ public sealed class AgentHost(
                     : $"{memory}\n\nФайл: {Memory.PathIn(settings.UserConfigDirectory)}");
                 return false;
             }
+            case "goal":
+                return RunGoalCommand(sessionId, live, command.Arguments, Say);
             case "remember":
                 Say(Memory.Append(settings.UserConfigDirectory, command.Arguments) ?? "Запомнил. Заметка попадёт в новые запросы всех сессий.");
                 return false;
@@ -177,12 +191,160 @@ public sealed class AgentHost(
     }
 
     /// <summary>
-    /// Replaces the model's view of the session with a summary (the user's /compact). The stored log keeps every message.
-    /// Runs in the background like a turn: the session is busy meanwhile and the user can stop it.
+    /// <c>/goal text</c> sets a goal and starts working on it; <c>/goal</c> shows it; <c>/goal clear</c> drops it; <c>/goal resume</c> continues a
+    /// paused one. Returns true when a turn started.
     /// </summary>
+    private bool RunGoalCommand(string sessionId, LiveSession live, string arguments, Action<string> say)
+    {
+        var goal = live.Tools.Goal;
+        var arg = arguments.Trim();
+
+        if (arg.Length == 0)
+        {
+            say(goal is null
+                ? "Цели нет. Поставьте её: /goal что нужно получить. Пока цель не выполнена, агент не остановится сам."
+                : $"Цель: {goal.Text}\nСостояние: {GoalStatusText(goal)}. /goal clear — снять, /goal resume — продолжить.");
+            return false;
+        }
+
+        if (arg is "clear" or "off" or "stop" or "снять")
+        {
+            live.Tools.Goal = null;
+            store.ClearGoal(sessionId);
+            lock (live.Gate)
+                live.Turn?.Cancel();
+            say(goal is null ? "Цели и не было." : "Цель снята.");
+            return false;
+        }
+
+        if (arg is "resume" or "continue" or "продолжить")
+        {
+            if (goal is null)
+            {
+                say("Цели нет. Поставьте её: /goal что нужно получить.");
+                return false;
+            }
+            goal.Status = GoalStatus.Active;
+            goal.Detail = null;
+            goal.IdleTurns = 0;
+            goal.ErrorsInRow = 0;
+            store.SaveGoal(sessionId, goal);
+            say($"Продолжаю к цели: {goal.Text}");
+            return BeginTurn(live, "Продолжай: цель ещё не выполнена.", null);
+        }
+
+        if (live.Turn is not null)
+            throw new RpcException(RpcErrorCodes.InvalidRequest, "Агент ещё работает в этой сессии. Дождитесь ответа или остановите его, затем ставьте цель.");
+        live.Tools.Goal = new GoalState(arg);
+        store.SaveGoal(sessionId, live.Tools.Goal);
+        say($"Цель поставлена: {arg}\nАгент не остановится, пока не выполнит её. Остановить: Esc или /goal clear.");
+        return BeginTurn(live, arg, null);
+    }
+
+    private static string GoalStatusText(GoalState goal) => goal.Status switch
+    {
+        GoalStatus.Active => "активна",
+        GoalStatus.Complete => $"выполнена. {goal.Detail}",
+        GoalStatus.Blocked => $"нужна ваша помощь: {goal.Detail}",
+        _ => $"на паузе{(string.IsNullOrEmpty(goal.Detail) ? "" : ": " + goal.Detail)}",
+    };
+
+    /// <summary>The delays before a goal's turn is tried again after a provider error; tests make them short.</summary>
+    internal static TimeSpan[] GoalRetryDelays { get; set; } = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(180)];
+
+    /// <summary>
+    /// What happens when a turn ends while a goal is active: the goal is done, blocked or paused, or the next turn starts by itself.
+    /// A turn the user stopped pauses the goal; a failed one is tried again after a pause; a model that talks without working twice in a
+    /// row is paused so it cannot burn tokens for nothing.
+    /// </summary>
+    private async Task AfterTurnAsync(LiveSession live, string reason, int toolCalls)
+    {
+        var id = live.Info.Id;
+        if (live.Tools.Goal is not { } goal || goal.Status is GoalStatus.Paused)
+            return;
+
+        void Say(string text) => _ = _notify(new AgentEventDto(id, "notice", Text: text));
+        void Stop(GoalStatus status, string text, string? detail = null)
+        {
+            goal.Status = status;
+            goal.Detail = detail;
+            store.SaveGoal(id, goal);
+            Say(text);
+        }
+
+        if (goal.Status == GoalStatus.Complete)
+        {
+            store.SaveGoal(id, goal);
+            Say($"Цель выполнена: {goal.Text}\nПроверка: {goal.Detail}");
+            return;
+        }
+        if (goal.Status == GoalStatus.Blocked)
+        {
+            store.SaveGoal(id, goal);
+            Say($"Агенту нужна ваша помощь: {goal.Detail}\nОтветьте ему или /goal resume, когда готово. Снять цель: /goal clear.");
+            return;
+        }
+        if (goal.Status != GoalStatus.Active)
+            return;
+
+        if (reason == "cancelled")
+        {
+            Stop(GoalStatus.Paused, "Цель на паузе: вы остановили агента. /goal resume — продолжить, /goal clear — снять.", "остановлено пользователем");
+            return;
+        }
+
+        if (reason == "error")
+        {
+            goal.ErrorsInRow++;
+            if (goal.ErrorsInRow > GoalRetryDelays.Length)
+            {
+                Stop(GoalStatus.Paused, $"Цель на паузе: модель {goal.ErrorsInRow} раз подряд не ответила. Когда связь наладится: /goal resume.", "ошибки провайдера");
+                return;
+            }
+            var wait = GoalRetryDelays[goal.ErrorsInRow - 1];
+            Say($"Ошибка ответа модели. Цель всё ещё активна: попробую снова через {wait.TotalSeconds:0} с (попытка {goal.ErrorsInRow} из {GoalRetryDelays.Length}).");
+            await Task.Delay(wait).ConfigureAwait(false);
+            if (goal.Status != GoalStatus.Active || live.Tools.Goal != goal)
+                return;
+        }
+        else
+        {
+            goal.ErrorsInRow = 0;
+            goal.IdleTurns = toolCalls == 0 ? goal.IdleTurns + 1 : 0;
+            if (goal.IdleTurns >= 2)
+            {
+                Stop(GoalStatus.Paused, "Цель на паузе: агент два хода подряд только отвечал текстом и ничего не делал. Подскажите, что дальше, или /goal resume.", "агент не продвигается");
+                return;
+            }
+        }
+
+        if (goal.Continuations >= GoalState.MaxContinuations)
+        {
+            Stop(GoalStatus.Paused, $"Цель на паузе: Kairo уже {GoalState.MaxContinuations} раз сам продолжал работу. /goal resume — продолжить.", "предел продолжений");
+            return;
+        }
+
+        goal.Continuations++;
+        store.SaveGoal(id, goal);
+        if (goal.Continuations % 10 == 0)
+            Say($"Цель всё ещё в работе (продолжение {goal.Continuations}): {goal.Text}");
+        try
+        {
+            BeginTurn(live, "Цель ещё не выполнена — продолжай.", null);
+        }
+        catch (RpcException)
+        {
+            // The user started a turn of their own in between: the goal goes on after it.
+        }
+    }
+
     public IReadOnlyList<SlashEntry> Commands(string sessionId) =>
         SlashCommands.List(GetLive(sessionId).Info.WorkingDirectory, settings.UserConfigDirectory);
 
+    /// <summary>
+    /// Replaces the model's view of the session with a summary (the user's /compact). The stored log keeps every message.
+    /// Runs in the background like a turn: the session is busy meanwhile and the user can stop it.
+    /// </summary>
     public void Compact(string sessionId, string? focus)
     {
         var live = GetLive(sessionId);
@@ -314,6 +476,7 @@ public sealed class AgentHost(
     {
         var id = live.Info.Id;
         long input = 0, output = 0;
+        var toolCalls = 0;
         var reason = "end_turn";
 
         await _notify(new AgentEventDto(id, "turn_started")).ConfigureAwait(false);
@@ -328,6 +491,7 @@ public sealed class AgentHost(
                         await _notify(new AgentEventDto(id, "text", Text: d.Text)).ConfigureAwait(false);
                         break;
                     case ToolCallStarted s:
+                        toolCalls++;
                         await _notify(new AgentEventDto(id, "tool_started", ToolCallId: s.Id, Tool: s.Tool, Summary: s.Summary, Detail: s.Detail)).ConfigureAwait(false);
                         break;
                     case ToolCallFinished f:
@@ -377,9 +541,22 @@ public sealed class AgentHost(
             turn.Dispose();
         }
 
+        // A turn that ends for a reason the user could not guess says why, instead of just going quiet.
+        if (StopNotice(reason) is { } why && live.Tools.Goal is not { Status: GoalStatus.Active })
+            _ = _notify(new AgentEventDto(id, "notice", Text: why));
+
         await _notify(new AgentEventDto(id, "turn_finished", Reason: reason, InputTokens: input, OutputTokens: output)).ConfigureAwait(false);
         await sessionsChanged().ConfigureAwait(false);
+        await AfterTurnAsync(live, reason, toolCalls).ConfigureAwait(false);
     }
+
+    private static string? StopNotice(string reason) => reason switch
+    {
+        "max_tokens" => "Ответ модели оборвался на лимите токенов. Напишите «продолжай» или поставьте цель: /goal.",
+        "max_model_calls" => "Ход остановлен: слишком много шагов за один ход. Напишите «продолжай» или поставьте цель: /goal.",
+        "refusal" => "Модель отказалась отвечать на этот запрос.",
+        _ => null,
+    };
 
     /// <summary>Keeps a note of an error or a cancel with the session (for `kairo sessions timeline`); a failure to write it never matters.</summary>
     private void Note(string sessionId, string kind, string text)
@@ -466,7 +643,17 @@ public sealed class AgentHost(
 
             var config = LoadConfig(info.WorkingDirectory);
             var permissions = new PermissionEngine(config.BuildRules(), config.Mode ?? PermissionMode.Default);
-            return new LiveSession(info, [.. history], permissions, new ToolContext(info.WorkingDirectory));
+            var tools = new ToolContext(info.WorkingDirectory);
+            if (store.LoadGoal(id) is { } goal)
+            {
+                if (goal.Status == GoalStatus.Active)
+                {
+                    goal.Status = GoalStatus.Paused;
+                    goal.Detail = "Kairo был перезапущен";
+                }
+                tools.Goal = goal;
+            }
+            return new LiveSession(info, [.. history], permissions, tools);
         });
 
     private KairoConfig LoadConfig(string workingDirectory)

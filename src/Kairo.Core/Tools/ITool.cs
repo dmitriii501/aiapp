@@ -84,6 +84,9 @@ public sealed class ToolContext(string workingDirectory)
     /// <summary>Set by the host when the session is autonomous; null runs commands with the user's own rights.</summary>
     public IProcessSandbox? Sandbox { get; set; }
 
+    /// <summary>The session's /goal, if any; GoalComplete and GoalBlocked change it. Set by the host.</summary>
+    public Kairo.Core.Agents.GoalState? Goal { get; set; }
+
     /// <summary>Set by the agent loop; the Task tool uses it to start subagents.</summary>
     public ISubagents? Subagents { get; set; }
 

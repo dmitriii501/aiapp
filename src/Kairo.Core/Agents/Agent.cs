@@ -43,7 +43,8 @@ public interface IPermissionPrompt
 /// <param name="ContextWindow">Size of the model's context in tokens; 0 turns automatic compaction off.</param>
 /// <param name="CompactAt">Share of the window at which the history is summarized.</param>
 /// <param name="Subagent">This agent was started by the Task tool: it does not offer subagents of its own.</param>
-public sealed record AgentOptions(string Model, string? Effort = null, int MaxModelCalls = 60, int ContextWindow = 0, double CompactAt = 0.8, bool Subagent = false);
+/// <param name="MaxModelCalls">Most model calls in one turn; 0 (the default) means no limit. Subagents and swarm workers set their own.</param>
+public sealed record AgentOptions(string Model, string? Effort = null, int MaxModelCalls = 0, int ContextWindow = 0, double CompactAt = 0.8, bool Subagent = false);
 
 public sealed class ToolRegistry
 {
@@ -128,7 +129,7 @@ public sealed class Agent(
             : ChatMessage.UserText(userText));
         var stopContinuations = 0;
 
-        for (var call = 0; call < options.MaxModelCalls; call++)
+        for (var call = 0; call < (options.MaxModelCalls > 0 ? options.MaxModelCalls : int.MaxValue); call++)
         {
             // Long single turns (many tool calls) can fill the window too: summarize between model calls.
             if (call > 0 && ShouldCompact(compactions))

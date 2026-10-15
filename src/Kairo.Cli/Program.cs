@@ -217,6 +217,9 @@ while (true)
             turn.Dispose();
             turn = null;
             continue;
+        case BuiltInCommand { Name: "goal" }:
+            Console.WriteLine("/goal works in the desktop app (the session keeps the goal and starts the next turn by itself). Here, describe the job and ask it to carry on until it is done.");
+            continue;
         case UnknownCommand unknown:
             Console.WriteLine($"Unknown command /{unknown.Name}. Try /help.");
             continue;
