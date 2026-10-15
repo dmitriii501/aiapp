@@ -103,7 +103,9 @@ public sealed class UiaDesktop : IDesktop
         var before = Windows().Where(w => w.Process == name).Select(w => w.Handle).ToHashSet();
         // A program that is only to be found through a Start Menu shortcut cannot be started by its bare name: start what Windows would.
         var target = LaunchCheck.Resolve(name) ?? application;
-        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+        // Not the folder Kairo itself runs from: a program that keeps it as its working directory (Paint, a Calculator) would stop an update
+        // from replacing the installed version for as long as it stays open.
+        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true, WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) });
 
         var deadline = Stopwatch.StartNew();
         while (deadline.Elapsed < wait)

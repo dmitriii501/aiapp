@@ -15,6 +15,16 @@ public static class Program
     {
         VelopackApp.Build().Run();
 
+        // The app starts in its own install folder ("current"). Every program it starts inherits that as its working directory, and a folder
+        // that is some process's working directory cannot be moved: an update would fail while Paint, a terminal or an MCP server is open.
+        try
+        {
+            Directory.SetCurrentDirectory(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+        }
+
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(callback =>
         {
