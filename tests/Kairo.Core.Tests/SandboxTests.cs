@@ -20,7 +20,25 @@ public sealed class SandboxTests : IDisposable
     {
         AppContainerSandbox.RevokeAll();
         foreach (var dir in new[] { _allowed, _closed, _readOnly })
-            Directory.Delete(dir, recursive: true);
+        {
+            // A command that was cancelled is killed a moment after the test ends: its files are let go a little later.
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                    break;
+                }
+                catch (IOException) when (attempt < 20)
+                {
+                    Thread.Sleep(250);
+                }
+                catch (IOException)
+                {
+                    break; // a temp folder left behind is not a failure of the test
+                }
+            }
+        }
     }
 
     private Task<ProcessOutcome> Run(AppContainerSandbox sandbox, string command, int timeoutMs = 60_000) =>
