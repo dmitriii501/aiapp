@@ -163,7 +163,7 @@ export function SettingsDialog() {
             hint={
               hasBraveKey
                 ? "Ключ сохранён в диспетчере учётных данных Windows. Введите новый, чтобы заменить. Вместо Brave можно указать свой SearXNG: [web] searxng_url в config.toml."
-                : "Нужен для инструмента WebSearch (бесплатный тариф есть на brave.com/search/api). Вместо него можно указать свой SearXNG: [web] searxng_url в config.toml."
+                : "Не обязателен: без ключа WebSearch ищет через DuckDuckGo (может отказать на адресах VPN). Ключ Brave (бесплатный тариф есть на brave.com/search/api) надёжнее; можно и свой SearXNG: [web] searxng_url в config.toml."
             }
           >
             <div className="input-row">

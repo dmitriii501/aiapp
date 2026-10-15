@@ -17,6 +17,9 @@ internal static class WebHttp
 {
     public const string UserAgent = "Mozilla/5.0 (compatible; Kairo/0.1; +https://github.com/dmitriii501/aiapp)";
 
+    /// <summary>For search pages that answer only to what looks like a browser.</summary>
+    public const string BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
     /// <summary>One guarded handler for the whole process: sockets are pooled in it.</summary>
     public static readonly HttpMessageHandler SharedGuarded = WebGuard.CreateHandler();
 
@@ -198,10 +201,6 @@ public sealed class WebSearchTool(Func<WebSearchSettings> settings, HttpMessageH
 {
     public const int MaxQueryChars = 400;
 
-    private const string NotSetUp =
-        "Web search is not set up. Tell the user to add a Brave Search API key in Kairo's settings, or to set [web] searxng_url in config.toml. " +
-        "Meanwhile use WebFetch with a URL you know.";
-
     private readonly HttpClient _http = new(handler ?? WebHttp.SharedPlain, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(30) };
 
     public ToolSpec Spec { get; } = new(
@@ -216,7 +215,7 @@ public sealed class WebSearchTool(Func<WebSearchSettings> settings, HttpMessageH
     public ToolAssessment Assess(JsonElement input, ToolContext ctx)
     {
         var query = Query(input);
-        var backend = Resolve(settings()) ?? throw new ToolInputException(NotSetUp);
+        var backend = Resolve(settings());
         // Subject is the search host, so "always allow" covers searching with this backend, whatever the query.
         return new(RiskLevel.Network, backend.Host, $"WebSearch(\"{WebHttp.Clip(query.ReplaceLineEndings(" "), 100)}\")");
     }
@@ -227,32 +226,51 @@ public sealed class WebSearchTool(Func<WebSearchSettings> settings, HttpMessageH
         var count = Math.Clamp(ToolInput.OptionalInt(input, "count") ?? 8, 1, 10);
         var config = settings();
         var backend = Resolve(config);
-        if (backend is null)
-            return ToolResult.Error(NotSetUp);
 
+        var first = await TryAsync(backend, config, query, count, ct).ConfigureAwait(false);
+        if (first.Ok || backend is DuckDuckGo)
+            return first.Result;
+
+        // The backend the user chose failed (a key that ran out, a server that is down): the keyless one still answers.
+        var fallback = await TryAsync(new DuckDuckGo(), config, query, count, ct).ConfigureAwait(false);
+        return fallback is { Ok: true, Count: > 0 }
+            ? fallback.Result with { Content = $"({backend.Host} did not answer: {first.Result.Content.ReplaceLineEndings(" ")} Results from DuckDuckGo instead.)" + Environment.NewLine + Environment.NewLine + fallback.Result.Content }
+            : first.Result;
+    }
+
+    private async Task<(bool Ok, ToolResult Result, int Count)> TryAsync(Backend backend, WebSearchSettings config, string query, int count, CancellationToken ct)
+    {
+        if (backend is DuckDuckGo && DuckDuckGo.BlockedFor() is { } wait)
+            return (false, ToolResult.Error($"{backend.Host} is refusing automated searches from this connection (often a VPN address); not asking again for {Math.Ceiling(wait.TotalMinutes)} more minutes. Ask the user to set a Brave key or a SearXNG address, or use WebFetch with an address you know."), 0);
         try
         {
             using var request = backend.Build(config, query, count);
-            request.Headers.UserAgent.ParseAdd(WebHttp.UserAgent);
+            request.Headers.UserAgent.ParseAdd(WebHttp.BrowserUserAgent);
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                return ToolResult.Error($"Search failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase} from {backend.Host}. {WebHttp.Clip(body.ReplaceLineEndings(" "), 200)}");
+                return (false, ToolResult.Error($"Search failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase} from {backend.Host}. {WebHttp.Clip(body.ReplaceLineEndings(" "), 200)}"), 0);
 
             var results = backend.Parse(body).Take(count).ToList();
-            return new(FormatResults(backend.Host, query, results));
+            if (results.Count == 0 && backend.LooksBlocked(body))
+            {
+                if (backend is DuckDuckGo)
+                    DuckDuckGo.BlockFor(TimeSpan.FromMinutes(10)); // asking again only makes the block last
+                return (false, ToolResult.Error($"{backend.Host} is asking for a human check and gave no results. Try again later, or ask the user to set a Brave key or a SearXNG address."), 0);
+            }
+            return (true, new(FormatResults(backend.Host, query, results)), results.Count);
         }
         catch (JsonException)
         {
-            return ToolResult.Error($"{backend.Host} returned something that is not search results. For SearXNG, check that the json format is enabled.");
+            return (false, ToolResult.Error($"{backend.Host} returned something that is not search results. For SearXNG, check that the json format is enabled."), 0);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return ToolResult.Error($"{backend.Host} did not answer within 30 seconds.");
+            return (false, ToolResult.Error($"{backend.Host} did not answer within 30 seconds."), 0);
         }
         catch (HttpRequestException ex)
         {
-            return ToolResult.Error($"Search failed: {ex.InnerException?.Message ?? ex.Message}");
+            return (false, ToolResult.Error($"Search failed: {ex.InnerException?.Message ?? ex.Message}"), 0);
         }
     }
 
@@ -284,21 +302,103 @@ public sealed class WebSearchTool(Func<WebSearchSettings> settings, HttpMessageH
         return query;
     }
 
-    private abstract class Backend
+    internal abstract class Backend
     {
         public abstract string Host { get; }
         public abstract HttpRequestMessage Build(WebSearchSettings config, string query, int count);
-        public abstract IEnumerable<Result> Parse(string json);
+        public abstract IEnumerable<Result> Parse(string body);
+
+        /// <summary>The page is a bot check rather than a list of results.</summary>
+        public virtual bool LooksBlocked(string body) => false;
     }
 
-    private static Backend? Resolve(WebSearchSettings config)
+    /// <summary>
+    /// SearXNG or Brave when the user set one up (or asked for it), otherwise DuckDuckGo's plain HTML page: it needs no key and no
+    /// account, so web search works out of the box.
+    /// </summary>
+    private static Backend Resolve(WebSearchSettings config)
     {
-        var wantsSearxng = string.Equals(config.Backend, "searxng", StringComparison.OrdinalIgnoreCase);
+        var wanted = config.Backend?.Trim().ToLowerInvariant();
         var hasBrave = !string.IsNullOrWhiteSpace(config.BraveKey);
         var hasSearxng = Uri.TryCreate(config.SearxngUrl, UriKind.Absolute, out var url) && url.Scheme is "http" or "https";
-        if (hasSearxng && (wantsSearxng || !hasBrave))
+        if (wanted is "duckduckgo" or "ddg")
+            return new DuckDuckGo();
+        if (hasSearxng && (wanted == "searxng" || !hasBrave))
             return new Searxng(url!);
-        return hasBrave ? new Brave() : null;
+        return hasBrave ? new Brave() : new DuckDuckGo();
+    }
+
+    /// <summary>
+    /// The keyless backend: html.duckduckgo.com/html/, the page DuckDuckGo serves to browsers without JavaScript. The addresses of the
+    /// results are wrapped in a redirect (uddg=) that is unwrapped here; ads are skipped.
+    /// </summary>
+    internal sealed class DuckDuckGo : Backend
+    {
+        public override string Host => "html.duckduckgo.com";
+
+        // DuckDuckGo answers a connection it takes for a bot with a check page, and keeps doing so for a while: remember it, and do not ask again.
+        private static DateTime _blockedUntil = DateTime.MinValue;
+
+        internal static void BlockFor(TimeSpan time) => _blockedUntil = DateTime.UtcNow + time;
+
+        internal static void ResetBlock() => _blockedUntil = DateTime.MinValue;
+
+        internal static TimeSpan? BlockedFor() => _blockedUntil > DateTime.UtcNow ? _blockedUntil - DateTime.UtcNow : null;
+
+        public override HttpRequestMessage Build(WebSearchSettings config, string query, int count)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"https://html.duckduckgo.com/html/?q={Uri.EscapeDataString(query)}");
+            request.Headers.Accept.ParseAdd("text/html");
+            request.Headers.AcceptLanguage.ParseAdd("en,ru;q=0.8");
+            return request;
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex Link = new(
+            "class=\"result__a\"[^>]*?href=\"(?<u>[^\"]+)\"[^>]*>(?<t>.*?)</a>(?<rest>.*?)(?=class=\"result__a\"|$)",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex Snippet = new(
+            "class=\"result__snippet\"[^>]*>(?<s>.*?)</a>",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        public override IEnumerable<Result> Parse(string html)
+        {
+            foreach (System.Text.RegularExpressions.Match m in Link.Matches(html))
+            {
+                var url = Unwrap(WebUtility.HtmlDecode(m.Groups["u"].Value));
+                if (url is null)
+                    continue;
+                var snippet = Snippet.Match(m.Groups["rest"].Value);
+                yield return new(Plain(m.Groups["t"].Value), url, snippet.Success ? Plain(snippet.Groups["s"].Value) : "");
+            }
+        }
+
+        /// <summary>The real address behind DuckDuckGo's redirect, or null for an ad or something that is not a web address.</summary>
+        internal static string? Unwrap(string href)
+        {
+            if (href.StartsWith("//", StringComparison.Ordinal))
+                href = "https:" + href;
+            if (!Uri.TryCreate(href, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+                return null;
+            if (uri.Host.EndsWith("duckduckgo.com", StringComparison.OrdinalIgnoreCase))
+            {
+                if (uri.AbsolutePath.StartsWith("/y.js", StringComparison.Ordinal))
+                    return null; // an ad
+                foreach (var pair in uri.Query.TrimStart('?').Split('&'))
+                {
+                    if (pair.StartsWith("uddg=", StringComparison.Ordinal))
+                    {
+                        var target = Uri.UnescapeDataString(pair[5..]);
+                        return Uri.TryCreate(target, UriKind.Absolute, out var t) && t.Scheme is "http" or "https" ? target : null;
+                    }
+                }
+                return null;
+            }
+            return href;
+        }
+
+        public override bool LooksBlocked(string body) =>
+            body.Contains("anomaly-modal", StringComparison.Ordinal) || body.Contains("bots use DuckDuckGo", StringComparison.OrdinalIgnoreCase) || body.Contains("g-recaptcha", StringComparison.Ordinal);
     }
 
     private sealed class Brave : Backend

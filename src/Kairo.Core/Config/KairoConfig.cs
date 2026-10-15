@@ -86,7 +86,7 @@ public sealed class KairoConfig
     /// <summary>Overrides the update feed (<c>[update] url</c>): a GitHub repository, a web address or a folder. Read from the user's file only.</summary>
     public string? UpdateUrl { get; set; }
 
-    /// <summary>Web search backend (<c>[web] search</c>): "brave" or "searxng". Read from the user's file only.</summary>
+    /// <summary>Web search backend (<c>[web] search</c>): "brave", "searxng" or "duckduckgo" (the default when nothing else is set up). Read from the user's file only.</summary>
     public string? WebSearch { get; set; }
 
     /// <summary>Address of a SearXNG instance (<c>[web] searxng_url</c>). Read from the user's file only: it receives the agent's queries.</summary>

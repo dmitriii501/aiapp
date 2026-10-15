@@ -23,7 +23,7 @@
 | Скиллы (`SKILL.md` — инструкции + скрипты, грузятся по требованию) | Claude Code | P1 | ✅ |
 | Слэш-команды (пользовательские промпты) | Claude Code | P1 | ✅ |
 | Память между сессиями | Claude Code, Cursor | P1 | ✅ пишет только пользователь (`/remember`) |
-| Web search / web fetch | все | P1 | ✅ Brave Search API или свой SearXNG |
+| Web search / web fetch | все | P1 | ✅ без настройки: страница DuckDuckGo без ключа; Brave Search API или свой SearXNG надёжнее |
 | Песочница для shell (Windows Sandbox / AppContainer / WSL) | Codex | P1 | ◐ AppContainer есть и **включена по умолчанию для воркеров роя**; Windows Sandbox и WSL не делались |
 | Git worktrees для параллельных задач | Claude Code, Codex | P1 (вместе с роем) | ✅ у воркеров роя |
 | Фоновые / запланированные задачи | Codex cloud | P2 | — |

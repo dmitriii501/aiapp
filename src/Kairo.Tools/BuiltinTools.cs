@@ -5,7 +5,7 @@ namespace Kairo.Tools;
 
 public static class BuiltinTools
 {
-    /// <param name="web">Where WebSearch gets results, read at each call so changes in settings apply at once. Without it, WebSearch reports that it is not set up.</param>
+    /// <param name="web">Where WebSearch gets results, read at each call so changes in settings apply at once. Without it, WebSearch uses DuckDuckGo's page, which needs no key.</param>
     /// <param name="webHandler">Replaces the HTTP stack of both web tools (tests).</param>
     /// <param name="userConfigDirectory">Where the user's skills live; the Skill tool also reads the project's.</param>
     public static IReadOnlyList<ITool> All(Func<WebSearchSettings>? web = null, HttpMessageHandler? webHandler = null, string? userConfigDirectory = null) =>

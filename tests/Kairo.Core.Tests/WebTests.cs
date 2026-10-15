@@ -380,14 +380,121 @@ public class WebSearchTests : IDisposable
         Assert.Equal("localhost:8080", new WebSearchTool(() => both with { Backend = null, BraveKey = null }, handler).Assess(Input("x"), Ctx).Subject);
     }
 
+    private const string DuckReply = """
+        <html><body>
+        <div class="result results_links results_links_deep web-result result--ad">
+          <a class="result__a" href="//duckduckgo.com/y.js?ad_domain=shop.example&amp;ad_provider=bing">Buy now</a>
+          <a class="result__snippet" href="//duckduckgo.com/y.js?x=1">An advert</a>
+        </div>
+        <div class="result results_links results_links_deep web-result">
+          <h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Flearn.microsoft.com%2Fdotnet%2Fapi%2Fsystem.text.json%3Fview%3Dnet-10.0&amp;rut=abc123">System.Text.<b>Json</b> Namespace &amp; more</a></h2>
+          <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Flearn.microsoft.com%2F&amp;rut=abc">Provides <b>high-performance</b> JSON APIs &#x27;in .NET&#x27;.</a>
+        </div>
+        <div class="result results_links results_links_deep web-result">
+          <h2 class="result__title"><a rel="nofollow" class="result__a" href="https://direct.example.org/page">A direct link</a></h2>
+          <a class="result__snippet" href="https://direct.example.org/page">No redirect here.</a>
+        </div>
+        <div class="result results_links results_links_deep web-result">
+          <h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fnosnippet.example%2F&amp;rut=zzz">No snippet</a></h2>
+        </div>
+        </body></html>
+        """;
+
     [Fact]
-    public void Without_a_backend_the_model_is_told_to_ask_the_user_and_nobody_is_prompted()
+    public async Task Without_any_setup_the_keyless_DuckDuckGo_page_is_used_and_its_redirects_and_ads_are_handled()
     {
-        var tool = new WebSearchTool(() => new WebSearchSettings(), new FuncHandler(_ => FuncHandler.Text("{}")));
+        WebSearchTool.DuckDuckGo.ResetBlock();
+        var handler = new FuncHandler(_ => FuncHandler.Text(DuckReply));
+        var tool = new WebSearchTool(() => new WebSearchSettings(), handler);
 
-        var ex = Assert.Throws<ToolInputException>(() => tool.Assess(Input("x"), Ctx));
+        var assessment = tool.Assess(Input("system.text.json"), Ctx);
+        var result = await tool.InvokeAsync(Input("system.text.json"), Ctx, default);
 
-        Assert.Contains("not set up", ex.Message);
+        Assert.Equal((RiskLevel.Network, "html.duckduckgo.com"), (assessment.Risk, assessment.Subject));
+        Assert.False(result.IsError, result.Content);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("html.duckduckgo.com", request.RequestUri!.Host);
+        Assert.Contains("q=system.text.json", request.RequestUri.Query);
+        Assert.Contains("System.Text.Json Namespace & more", result.Content);
+        Assert.Contains("https://learn.microsoft.com/dotnet/api/system.text.json?view=net-10.0", result.Content);
+        Assert.Contains("Provides high-performance JSON APIs 'in .NET'.", result.Content);
+        Assert.Contains("https://direct.example.org/page", result.Content);
+        Assert.Contains("https://nosnippet.example/", result.Content);
+        Assert.DoesNotContain("Buy now", result.Content);
+        Assert.DoesNotContain("duckduckgo.com/l/", result.Content);
+        Assert.Contains("untrusted", result.Content);
+    }
+
+    [Fact]
+    public async Task A_bot_check_page_is_reported_as_such_and_not_asked_again_for_a_while()
+    {
+        WebSearchTool.DuckDuckGo.ResetBlock();
+        var tool = new WebSearchTool(() => new WebSearchSettings(), new FuncHandler(_ => FuncHandler.Text("<html><div class=\"anomaly-modal__title\">Unfortunately, bots use DuckDuckGo too.</div></html>")));
+
+        var result = await tool.InvokeAsync(Input("x"), Ctx, default);
+
+        Assert.True(result.IsError);
+        Assert.Contains("human check", result.Content);
+
+        // The next search does not even go out: asking again only makes the block last.
+        var handler = new FuncHandler(_ => FuncHandler.Text(DuckReply));
+        var again = await new WebSearchTool(() => new WebSearchSettings(), handler).InvokeAsync(Input("y"), Ctx, default);
+
+        Assert.True(again.IsError);
+        Assert.Contains("not asking again", again.Content);
+        Assert.Empty(handler.Requests);
+        WebSearchTool.DuckDuckGo.ResetBlock();
+    }
+
+    [Fact]
+    public async Task When_the_chosen_backend_fails_the_keyless_one_answers_instead()
+    {
+        WebSearchTool.DuckDuckGo.ResetBlock();
+        var tool = new WebSearchTool(() => new WebSearchSettings(BraveKey: "dead-key"), new FuncHandler(r => r.RequestUri!.Host == "api.search.brave.com"
+            ? FuncHandler.Text("{\"error\":\"quota\"}", "application/json", HttpStatusCode.TooManyRequests)
+            : FuncHandler.Text(DuckReply)));
+
+        var result = await tool.InvokeAsync(Input("x"), Ctx, default);
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Contains("api.search.brave.com did not answer", result.Content);
+        Assert.Contains("Results from DuckDuckGo instead", result.Content);
+        Assert.Contains("https://direct.example.org/page", result.Content);
+        Assert.DoesNotContain("dead-key", result.Content);
+    }
+
+    [Fact]
+    public void DuckDuckGo_can_be_chosen_even_when_a_Brave_key_exists()
+    {
+        var handler = new FuncHandler(_ => FuncHandler.Text(DuckReply));
+        var settings = new WebSearchSettings("k", Backend: "duckduckgo");
+
+        Assert.Equal("html.duckduckgo.com", new WebSearchTool(() => settings, handler).Assess(Input("x"), Ctx).Subject);
+    }
+
+    [Theory]
+    [InlineData("//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.example%2Fp%3Fq%3D1%26r%3D2&rut=x", "https://a.example/p?q=1&r=2")]
+    [InlineData("https://plain.example/z", "https://plain.example/z")]
+    [InlineData("//duckduckgo.com/y.js?ad_domain=x", null)]
+    [InlineData("//duckduckgo.com/l/?uddg=javascript%3Aalert(1)&rut=x", null)]
+    [InlineData("//duckduckgo.com/about", null)]
+    public void The_address_behind_the_redirect_is_found_and_ads_and_odd_schemes_are_dropped(string href, string? expected) =>
+        Assert.Equal(expected, WebSearchTool.DuckDuckGo.Unwrap(href));
+
+    /// <summary>Against the real page; it needs the internet, so it runs only when KAIRO_LIVE_WEB=1.</summary>
+    [Fact]
+    public async Task Live_DuckDuckGo_returns_results_with_real_addresses()
+    {
+        if (Environment.GetEnvironmentVariable("KAIRO_LIVE_WEB") != "1")
+            return;
+        WebSearchTool.DuckDuckGo.ResetBlock();
+        var tool = new WebSearchTool(() => new WebSearchSettings());
+
+        var result = await tool.InvokeAsync(Input("System.Text.Json JsonSerializer documentation"), Ctx, default);
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Contains("https://", result.Content);
+        Assert.DoesNotContain("duckduckgo.com/l/", result.Content);
     }
 
     [Fact]
