@@ -43,7 +43,8 @@ public sealed record GameResult(
 
 /// <param name="DryRun">Look once and say what the rules would do, without doing it.</param>
 /// <param name="OnTick">Told about each tick as it happens (the command line prints them).</param>
-public sealed record GameRunOptions(bool DryRun = false, Action<string>? OnTick = null, int Seed = 12345);
+/// <param name="DumpDirectory">Each picture that goes to Jev is also saved here (look-1.jpg, look-2.jpg …): to see what Jev was asked about.</param>
+public sealed record GameRunOptions(bool DryRun = false, Action<string>? OnTick = null, int Seed = 12345, string? DumpDirectory = null);
 
 /// <summary>
 /// The loop of a game policy: look (one request to Jev), let the rules decide, act, repeat. The big model is not in it: it wrote the
@@ -91,7 +92,20 @@ public static class GameRunner
             options.OnTick?.Invoke(line);
         }
 
-        GameResult Finish(GameStatus status, string reason) =>
+        // Pipeline: the looks that are still in flight when the run ends are let go (their failures are nobody's business any more).
+        var flight = new Queue<(Task<Perception> Task, long Started)>();
+        var ledger = new ClickLedger();
+        var latestShot = 0; // the newest picture TAKEN (desktops accept actions only against that one), even if its look is still in flight
+        var pipeline = policy.Limits.Pipeline && !options.DryRun;
+
+        GameResult Finish(GameStatus status, string reason)
+        {
+            foreach (var item in flight)
+                _ = item.Task.ContinueWith(t => t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            return Result(status, reason);
+        }
+
+        GameResult Result(GameStatus status, string reason) =>
             new(status, reason, tick, clock.ElapsedMilliseconds, actions, log, last, policy, tick == 0 ? 0 : tickTotal / tick, tick == 0 ? 0 : jevTotal / tick);
 
         while (true)
@@ -111,9 +125,36 @@ public static class GameRunner
 
             var tickStart = clock.ElapsedMilliseconds;
             Perception look;
+            long capturedAt;
             try
             {
-                look = await LookAsync(desktop, model, window, policy, ct).ConfigureAwait(false);
+                if (pipeline)
+                {
+                    void Start()
+                    {
+                        var number = tick + flight.Count + 1;
+                        var picturePath = options.DumpDirectory is { } d ? Path.Combine(d, $"look-{number}.jpg") : null;
+                        flight.Enqueue((Task.Run(() => LookAsync(desktop, model, window, policy, ct, picturePath, id => { lock (ledger) latestShot = Math.Max(latestShot, id); }), ct), clock.ElapsedMilliseconds));
+                    }
+
+                    if (flight.Count == 0)
+                        Start();
+                    // The second look starts half a look after the first (a look takes what the last ones took).
+                    var stagger = Math.Max(150, (tick == 0 ? 600 : jevTotal / tick + 150) / 2);
+                    var wait = stagger - (clock.ElapsedMilliseconds - flight.Peek().Started);
+                    if (flight.Count == 1 && wait > 0)
+                        await Task.WhenAny(flight.Peek().Task, Task.Delay((int)wait, ct)).ConfigureAwait(false);
+                    if (flight.Count == 1 && !flight.Peek().Task.IsCompleted)
+                        Start();
+                    var head = flight.Dequeue();
+                    capturedAt = head.Started;
+                    look = await head.Task.ConfigureAwait(false);
+                }
+                else
+                {
+                    capturedAt = clock.ElapsedMilliseconds;
+                    look = await LookAsync(desktop, model, window, policy, ct, options.DumpDirectory is { } dump ? Path.Combine(dump, $"look-{tick + 1}.jpg") : null).ConfigureAwait(false);
+                }
                 failures = 0;
             }
             catch (DecisionException ex) when (ex.Kind is DecisionFailure.Timeout or DecisionFailure.Busy && ++failures < MaxLookFailures)
@@ -152,14 +193,19 @@ public static class GameRunner
             };
 
             GameRule? match = null;
+            var heldBack = new List<string>();
             try
             {
                 foreach (var rule in policy.Rules)
                 {
-                    if (rule.Once && fired.Contains(rule.Name))
+                    var onCooldown = rule.Cooldown > 0 && lastFired.TryGetValue(rule.Name, out var at) && tick - at < rule.Cooldown;
+                    if (rule.Once && fired.Contains(rule.Name) || onCooldown)
+                    {
+                        // A rule that is true but held back is the usual reason for "nothing happens": say which.
+                        if (rule.When.EvalBool(Lookup, random.NextDouble))
+                            heldBack.Add($"{rule.Name} ({(onCooldown ? $"cooldown {rule.Cooldown}" : "once, already fired")})");
                         continue;
-                    if (rule.Cooldown > 0 && lastFired.TryGetValue(rule.Name, out var at) && tick - at < rule.Cooldown)
-                        continue;
+                    }
                     if (rule.When.EvalBool(Lookup, random.NextDouble))
                     {
                         match = rule;
@@ -177,6 +223,8 @@ public static class GameRunner
             if (match is null)
             {
                 idle++;
+                if (heldBack.Count > 0)
+                    did.Add("true but held back: " + string.Join(", ", heldBack));
             }
             else
             {
@@ -186,7 +234,7 @@ public static class GameRunner
                 {
                     try
                     {
-                        var (text, stop, did1) = await ExecuteAsync(action, look, desktop, window, vars, Lookup, random, options.DryRun, ct).ConfigureAwait(false);
+                        var (text, stop, did1) = await ExecuteAsync(action, look, desktop, window, vars, Lookup, random, options.DryRun, pipeline ? new ClickContext(ledger, capturedAt, clock, () => { lock (ledger) return latestShot; }) : null, ct).ConfigureAwait(false);
                         did.Add(text);
                         if (stop is { } stopAction)
                         {
@@ -215,7 +263,7 @@ public static class GameRunner
             if (options.DryRun)
                 return Finish(GameStatus.Done, "dry run: one look, nothing was done");
             if (idle >= policy.Limits.StallTicks)
-                return Finish(GameStatus.Stalled, $"{idle} ticks in a row where no rule had anything to do");
+                return Finish(GameStatus.Stalled, $"{idle} ticks in a row where no rule had anything to do" + (heldBack.Count > 0 ? $" (a rule was true but held back: {string.Join(", ", heldBack)}; drop its cooldown or once)" : ""));
             if (unchanged >= policy.Limits.StallTicks)
                 return Finish(GameStatus.Stalled, $"the screen did not change in {unchanged} ticks in a row after clicking");
 
@@ -231,13 +279,19 @@ public static class GameRunner
     // ---- Looking ----
 
     /// <summary>One look: the picture (the part the policy asks for, no wider than it says), every question of the policy in one request.</summary>
-    public static async Task<Perception> LookAsync(IDesktop desktop, IDecisionModel model, long window, GamePolicy policy, CancellationToken ct)
+    public static async Task<Perception> LookAsync(IDesktop desktop, IDecisionModel model, long window, GamePolicy policy, CancellationToken ct, string? savePicture = null, Action<int>? onCaptured = null)
     {
         var clock = Stopwatch.StartNew();
         var shot = desktop.Capture(window);
+        onCaptured?.Invoke(shot.Id);
         var p = shot.Picture;
         var (image, regionLeft, regionTop, regionWidth, regionHeight) = Vision.Prepare(p, policy.Region, policy.Width);
         var prepared = clock.ElapsedMilliseconds;
+        if (savePicture is not null)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(savePicture))!);
+            await File.WriteAllBytesAsync(savePicture, image.Data, ct).ConfigureAwait(false);
+        }
 
         const string key = "screen";
         var questions = new Dictionary<string, DecisionQuestion>();
@@ -293,7 +347,7 @@ public static class GameRunner
 
     private static async Task<(string Text, StopAction? Stop, bool Acted)> ExecuteAsync(
         GameAction action, Perception look, IDesktop desktop, long window, Dictionary<string, object> vars,
-        Func<string, object?> lookup, Random random, bool dryRun, CancellationToken ct)
+        Func<string, object?> lookup, Random random, bool dryRun, ClickContext? pipeline, CancellationToken ct)
     {
         switch (action)
         {
@@ -323,7 +377,12 @@ public static class GameRunner
                 var text = $"click {where} @ ({x:0},{y:0})";
                 if (dryRun)
                     return (text + " [dry run]", null, false);
-                var outcome = desktop.Perform(window, new DesktopAction(button, look.Shot.Id, null, null, (int)x, (int)y), TimeSpan.FromMilliseconds(15));
+                // Pipeline: this picture is up to one look old. A click near one made since it was taken would hit the same thing twice.
+                if (pipeline is not null && pipeline.Ledger.ClickedSince(pipeline.PictureTakenAt, x, y, look.Shot.Picture.Width))
+                    return ($"click {where}: skipped (clicked there since this picture was taken)", null, false);
+                var outcome = desktop.Perform(window, new DesktopAction(button, pipeline?.LatestShot() ?? look.Shot.Id, null, null, (int)x, (int)y), TimeSpan.FromMilliseconds(15));
+                if (outcome.Ok)
+                    pipeline?.Ledger.Add(pipeline.Clock.ElapsedMilliseconds, x, y);
                 return (outcome.Ok ? text : $"click {where}: skipped ({outcome.Message})", null, outcome.Ok);
             }
             case DragAction drag:
@@ -349,28 +408,24 @@ public static class GameRunner
             case SetAction set:
             {
                 var value = set.Value.Eval(lookup, random.NextDouble);
-                if (!dryRun)
-                    vars[set.Variable] = value;
+                vars[set.Variable] = value; // also in a dry run: the notes are a copy, and the next action of the rule reads them
                 return ($"set {set.Variable} = {Show(value)}", null, false);
             }
             case PutAction put:
             {
                 var key = GameExpr.Key(put.Key.Eval(lookup, random.NextDouble));
                 var value = put.Value.Eval(lookup, random.NextDouble);
-                if (!dryRun)
-                    ((Dictionary<string, object>)vars[put.Map])[key] = value;
+                ((Dictionary<string, object>)vars[put.Map])[key] = value;
                 return ($"put {put.Map}[{key}] = {Show(value)}", null, false);
             }
             case DelAction del:
             {
                 var key = GameExpr.Key(del.Key.Eval(lookup, random.NextDouble));
-                if (!dryRun)
-                    ((Dictionary<string, object>)vars[del.Map]).Remove(key);
+                ((Dictionary<string, object>)vars[del.Map]).Remove(key);
                 return ($"del {del.Map}[{key}]", null, false);
             }
             case ClearAction clear:
-                if (!dryRun)
-                    ((Dictionary<string, object>)vars[clear.Map]).Clear();
+                ((Dictionary<string, object>)vars[clear.Map]).Clear();
                 return ($"clear {clear.Map}", null, false);
             case WaitAction wait:
                 if (!dryRun)
@@ -380,6 +435,28 @@ public static class GameRunner
                 return (stop.Handover ? $"hand over ({stop.Reason})" : $"stop ({stop.Reason})", stop, false);
             default:
                 return (action.ToString() ?? "", null, false);
+        }
+    }
+
+    private sealed record ClickContext(ClickLedger Ledger, long PictureTakenAt, Stopwatch Clock, Func<int> LatestShot);
+
+    /// <summary>The clicks of a pipelined run, so that two looks that both see the same target do not both click it.</summary>
+    internal sealed class ClickLedger
+    {
+        private readonly List<(long At, double X, double Y)> _clicks = [];
+
+        public void Add(long at, double x, double y)
+        {
+            _clicks.Add((at, x, y));
+            if (_clicks.Count > 64)
+                _clicks.RemoveAt(0);
+        }
+
+        /// <summary>A click since <paramref name="since"/> within about 4% of the picture width of the point.</summary>
+        public bool ClickedSince(long since, double x, double y, int pictureWidth)
+        {
+            var radius = Math.Max(12, pictureWidth * 0.04);
+            return _clicks.Any(c => c.At >= since && Math.Abs(c.X - x) <= radius && Math.Abs(c.Y - y) <= radius);
         }
     }
 

@@ -189,7 +189,9 @@ public sealed class GameMemoryTests : IDisposable
         {
             var answers = new Dictionary<string, DecisionAnswer>
             {
-                ["f0"] = new BoxAnswer(0.2, 0.2, 0.8, 0.8, 0.95),
+                // The corner cards of the board (x 160..640, y 100..400 of an 800x500 window; cards 120 by 100): centres (220, 150) and (580, 350).
+                ["f0"] = new BoxAnswer(180.0 / 800, 115.0 / 500, 260.0 / 800, 185.0 / 500, 0.9),
+                ["f1"] = new BoxAnswer(540.0 / 800, 315.0 / 500, 620.0 / 800, 385.0 / 500, 0.9),
                 ["c0"] = new YesNoAnswer(sim.Pairs == 6 ? 0.99 : 0.01),
             };
             var symbol = sim.Look();

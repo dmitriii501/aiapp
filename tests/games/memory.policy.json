@@ -3,7 +3,10 @@
   "app": "msedge.exe",
   "width": 1024,
   "see": {
-    "find": { "board": { "look": "the whole grid of twelve cards (four columns, three rows)", "presence": false } },
+    "find": {
+      "tl": { "look": "the card in the top-left corner of the grid of twelve cards", "presence": false },
+      "br": { "look": "the card in the bottom-right corner of the grid of twelve cards", "presence": false }
+    },
     "check": { "over": "the text All pairs found is shown" },
     "choose": {
       "symbol": {
@@ -25,23 +28,23 @@
     { "name": "end", "when": "check.over > 0.8", "do": [ { "stop": "all pairs found" } ] },
 
     { "name": "read_first_match",
-      "when": "phase == 1 && choose.symbol != 'none' && find_key(known, choose.symbol, done, first) >= 0",
+      "when": "phase == 1 && choose.symbol != 'none' && find.tl.conf > 0.4 && find.br.conf > 0.4 && find_key(known, choose.symbol, done, first) >= 0",
       "do": [
         { "put": { "map": "known", "key": "first", "value": "choose.symbol" } },
         { "set": "t = find_key(known, choose.symbol, done, first)" },
-        { "click": { "x": "find.board.left + ((t % cols) + 0.5) * find.board.w / cols", "y": "find.board.top + (floor(t / cols) + 0.5) * find.board.h / rows" } },
+        { "click": { "x": "find.tl.x + (t % cols) * (find.br.x - find.tl.x) / (cols - 1)", "y": "find.tl.y + floor(t / cols) * (find.br.y - find.tl.y) / (rows - 1)" } },
         { "put": { "map": "done", "key": "first", "value": "1" } },
         { "put": { "map": "done", "key": "t", "value": "1" } },
         { "set": "phase = 0" },
         { "wait": 300 }
       ] },
     { "name": "read_first_new",
-      "when": "phase == 1 && choose.symbol != 'none'",
+      "when": "phase == 1 && choose.symbol != 'none' && find.tl.conf > 0.4 && find.br.conf > 0.4",
       "do": [
         { "put": { "map": "known", "key": "first", "value": "choose.symbol" } },
         { "set": "second = first_free(known, 12)" },
         { "set": "t = second" },
-        { "click": { "x": "find.board.left + ((t % cols) + 0.5) * find.board.w / cols", "y": "find.board.top + (floor(t / cols) + 0.5) * find.board.h / rows" } },
+        { "click": { "x": "find.tl.x + (t % cols) * (find.br.x - find.tl.x) / (cols - 1)", "y": "find.tl.y + floor(t / cols) * (find.br.y - find.tl.y) / (rows - 1)" } },
         { "set": "phase = 2" },
         { "wait": 300 }
       ] },
@@ -63,31 +66,31 @@
       ] },
 
     { "name": "second_of_known_pair",
-      "when": "phase == 3",
+      "when": "phase == 3 && find.tl.conf > 0.4 && find.br.conf > 0.4",
       "do": [
         { "set": "t = b" },
-        { "click": { "x": "find.board.left + ((t % cols) + 0.5) * find.board.w / cols", "y": "find.board.top + (floor(t / cols) + 0.5) * find.board.h / rows" } },
+        { "click": { "x": "find.tl.x + (t % cols) * (find.br.x - find.tl.x) / (cols - 1)", "y": "find.tl.y + floor(t / cols) * (find.br.y - find.tl.y) / (rows - 1)" } },
         { "put": { "map": "done", "key": "a", "value": "1" } },
         { "put": { "map": "done", "key": "b", "value": "1" } },
         { "set": "phase = 0" },
         { "wait": 300 }
       ] },
     { "name": "first_of_known_pair",
-      "when": "phase == 0 && pair_a(known, done) >= 0",
+      "when": "phase == 0 && pair_a(known, done) >= 0 && find.tl.conf > 0.4 && find.br.conf > 0.4",
       "do": [
         { "set": "a = pair_a(known, done)" },
         { "set": "b = pair_b(known, done)" },
         { "set": "t = a" },
-        { "click": { "x": "find.board.left + ((t % cols) + 0.5) * find.board.w / cols", "y": "find.board.top + (floor(t / cols) + 0.5) * find.board.h / rows" } },
+        { "click": { "x": "find.tl.x + (t % cols) * (find.br.x - find.tl.x) / (cols - 1)", "y": "find.tl.y + floor(t / cols) * (find.br.y - find.tl.y) / (rows - 1)" } },
         { "set": "phase = 3" },
         { "wait": 200 }
       ] },
     { "name": "open_unknown",
-      "when": "phase == 0 && first_free(known, 12) >= 0",
+      "when": "phase == 0 && first_free(known, 12) >= 0 && find.tl.conf > 0.4 && find.br.conf > 0.4",
       "do": [
         { "set": "first = first_free(known, 12)" },
         { "set": "t = first" },
-        { "click": { "x": "find.board.left + ((t % cols) + 0.5) * find.board.w / cols", "y": "find.board.top + (floor(t / cols) + 0.5) * find.board.h / rows" } },
+        { "click": { "x": "find.tl.x + (t % cols) * (find.br.x - find.tl.x) / (cols - 1)", "y": "find.tl.y + floor(t / cols) * (find.br.y - find.tl.y) / (rows - 1)" } },
         { "set": "phase = 1" },
         { "wait": 300 }
       ] }

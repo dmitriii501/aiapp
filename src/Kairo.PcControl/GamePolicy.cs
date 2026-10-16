@@ -45,7 +45,8 @@ public sealed record StopAction(string Reason, bool Handover) : GameAction;
 /// <param name="Cooldown">Ticks that must pass before it may fire again.</param>
 public sealed record GameRule(string Name, GameExpr When, IReadOnlyList<GameAction> Do, bool Once, int Cooldown);
 
-public sealed record GameLimits(int MaxTicks = 600, int MaxSeconds = 300, int StallTicks = 8, int TickMs = 0);
+/// <param name="Pipeline">Two looks are in flight at once, the second started half a look after the first, so decisions come about twice as often (each from a picture that is up to one look old). A click close to one made since the picture was taken is skipped. Only for policies that keep no notes.</param>
+public sealed record GameLimits(int MaxTicks = 600, int MaxSeconds = 300, int StallTicks = 8, int TickMs = 0, bool Pipeline = false);
 
 /// <summary>
 /// A game (or any window the element list cannot read) played by looking and reacting, without the big model in the loop: every tick
@@ -361,7 +362,10 @@ public static partial class GamePolicyParser
                     Fail($"limits.{n}: {min} to {max}.");
                 return Math.Clamp(i, min, max);
             }
-            limits = new GameLimits(Int("max_ticks", 600, 1, 5000), Int("max_seconds", 300, 5, 1800), Int("stall_ticks", 8, 2, 100), Int("tick_ms", 0, 0, 5000));
+            var pipeline = lim.TryGetProperty("pipeline", out var pl) && pl.ValueKind == JsonValueKind.True;
+            if (pipeline && vars.Count > 0)
+                Fail("limits.pipeline: not with vars (a decision that depends on notes cannot be made from a picture that is one look old).");
+            limits = new GameLimits(Int("max_ticks", 600, 1, 5000), Int("max_seconds", 300, 5, 1800), Int("stall_ticks", 8, 2, 100), Int("tick_ms", 0, 0, 5000), pipeline);
         }
 
         return errors.Count > 0 || goal is null || app is null

@@ -27,6 +27,7 @@ internal sealed class CliOptions
     public bool Help { get; private set; }
     public bool PcDry { get; private set; }
     public string? PcSave { get; private set; }
+    public string? PcDump { get; private set; }
 
     public const string Usage = """
         Kairo — AI agent for Windows
@@ -78,6 +79,7 @@ internal sealed class CliOptions
                 case "-h" or "--help": o.Help = true; break;
                 case "--dry": o.PcDry = true; break;
                 case "--save": o.PcSave = Next(); break;
+                case "--dump": o.PcDump = Next(); break;
                 case "-p" or "--print": o.Prompt = Next(); break;
                 case "-c" or "--continue": o.Continue = true; break;
                 case "-r" or "--resume": o.Resume = Next(); break;

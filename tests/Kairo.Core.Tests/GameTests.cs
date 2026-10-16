@@ -246,7 +246,7 @@ public sealed class GameRunnerTests : IDisposable
 
     private static BoxAnswer Box(double left, double top, double right, double bottom, double conf = 0.9) => new(left, top, right, bottom, conf);
 
-    private Task<GameResult> Run(GamePolicy policy, ScriptedEyes eyes, GameRunOptions? options = null) =>
+    private Task<GameResult> Run(GamePolicy policy, IDecisionModel eyes, GameRunOptions? options = null) =>
         GameRunner.RunAsync(_desktop, _guard, eyes, policy, _desktop.Window.Handle, options, default);
 
     private const string Circles = """
@@ -526,6 +526,58 @@ public sealed class GameRunnerTests : IDisposable
         Assert.Contains("3 ticks in", text);
         Assert.Contains("a minute", text);
         Assert.Contains("Jev", text);
+    }
+
+    private sealed class Slow(IDecisionModel inner, int milliseconds) : IDecisionModel
+    {
+        public string Id => inner.Id;
+
+        public async Task<DecisionResult> DecideAsync(DecisionRequest request, CancellationToken ct)
+        {
+            await Task.Delay(milliseconds, ct);
+            return await inner.DecideAsync(request, ct);
+        }
+    }
+
+    private const string Pipelined = """
+        {"goal":"click the green circle","app":"notepad.exe",
+         "see":{"find":{"green":"the green circle"}},
+         "rules":[
+           {"name":"end","when":"elapsed > 1.6","do":[{"stop":"enough"}]},
+           {"name":"hit","when":"find.green.seen > 0.7","do":[{"click":"green"}]}],
+         "limits":{"max_ticks":100,"stall_ticks":50,"pipeline":%PIPELINE%}}
+        """;
+
+    [Fact]
+    public async Task A_pipelined_run_decides_more_often_and_does_not_click_the_same_thing_twice()
+    {
+        _desktop.StaticPicture = false;
+        var plain = Policy(Pipelined.Replace("%PIPELINE%", "false"));
+        var piped = Policy(Pipelined.Replace("%PIPELINE%", "true"));
+        Assert.False(plain.Limits.Pipeline);
+        Assert.True(piped.Limits.Pipeline);
+        Frame Green(int _) => new(new() { ["green"] = (0.95, Box(0.4, 0.4, 0.6, 0.6)) });
+
+        var slowly = await Run(plain, new Slow(new ScriptedEyes(plain, Green), 400));
+        _desktop.Performed.Clear();
+        var fast = await Run(piped, new Slow(new ScriptedEyes(piped, Green), 400));
+
+        Assert.Equal(GameStatus.Done, fast.Status);
+        Assert.True(fast.Ticks > slowly.Ticks, $"{fast.Ticks} ticks pipelined against {slowly.Ticks}");
+        // The target never moves, so the second look of a pair finds it where the first one already clicked.
+        Assert.True(fast.Log.Any(l => l.Contains("clicked there since this picture was taken")), string.Join(" | ", fast.Log));
+        Assert.True(_desktop.Performed.Count < fast.Ticks - 1, $"{_desktop.Performed.Count} clicks in {fast.Ticks} ticks");
+    }
+
+    [Fact]
+    public void A_pipelined_policy_may_not_keep_notes()
+    {
+        var parsed = GamePolicyParser.Parse(JsonDocument.Parse("""
+            {"goal":"g","app":"notepad.exe","vars":{"n":0},"rules":[{"when":"true","do":[{"set":"n = n + 1"}]}],"limits":{"pipeline":true}}
+            """).RootElement, new PcGuard(["notepad.exe"]));
+
+        Assert.False(parsed.Ok);
+        Assert.Contains(parsed.Errors, e => e.Contains("pipeline"));
     }
 }
 

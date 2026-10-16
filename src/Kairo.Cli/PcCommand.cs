@@ -249,7 +249,7 @@ internal static class PcCommand
             e.Cancel = true;
             cancel.Cancel();
         };
-        var result = await GameRunner.RunAsync(desktop, guard, model, policy, window.Handle, new GameRunOptions(options.PcDry, line => Console.WriteLine("  " + line)), cancel.Token);
+        var result = await GameRunner.RunAsync(desktop, guard, model, policy, window.Handle, new GameRunOptions(options.PcDry, line => Console.WriteLine("  " + line), DumpDirectory: options.PcDump), cancel.Token);
         Console.WriteLine();
         Console.WriteLine(GameRunner.Describe(result));
         Console.WriteLine($"Window title now: {desktop.Window(window.Handle)?.Title}");
