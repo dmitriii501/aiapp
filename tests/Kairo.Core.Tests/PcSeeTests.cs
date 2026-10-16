@@ -97,7 +97,9 @@ public sealed class PcSeeTests : IDisposable
         Assert.IsType<BoxQuestion>(request.Questions["f0"]);
         Assert.Contains("the Save button", request.Questions["f0"].Instructions);
         var picture = Assert.Single(request.Images!);
-        Assert.Equal("png", picture.Value.Format);
+        Assert.Equal("jpg", picture.Value.Format); // not the PNG: a picture with real graphics is megabytes, and the upload is the time
+        using (var sent = new Bitmap(new MemoryStream(picture.Value.Data)))
+            Assert.Equal((800, 500), (sent.Width, sent.Height));
         Assert.Contains(picture.Key, request.State.Value.GetRawText()); // the question can point at the picture by name
         // Box (0.4..0.6, 0.4..0.6) of an 800x500 picture: centre (400, 250).
         Assert.Contains("FOUND \"the Save button\": click at (400, 250), box (320, 200)-(480, 300)", result.Content);

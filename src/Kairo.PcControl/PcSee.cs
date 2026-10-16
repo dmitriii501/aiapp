@@ -39,6 +39,41 @@ internal static class Vision
     public const int MaxSide = 1568;
     public const int MinPixels = 78_400;
 
+    /// <summary>
+    /// What goes to Jev: the picture as a JPEG. A screenshot with real graphics is a PNG of two or three megabytes, and measured on a
+    /// picture like that the request took 11-14 s against 0.9 s for the same picture as a 180 KB JPEG: the time is the upload. If the
+    /// bytes cannot be decoded they go as they are.
+    /// </summary>
+    internal static DecisionImage ForJev(byte[] png)
+    {
+        try
+        {
+            using var bitmap = new Bitmap(new MemoryStream(png));
+            return new DecisionImage("jpg", Jpeg(bitmap));
+        }
+        catch (ArgumentException)
+        {
+            return new DecisionImage("png", png);
+        }
+    }
+
+    internal static byte[] Jpeg(Bitmap bitmap, long quality = 82)
+    {
+        var codec = ImageCodecInfo.GetImageEncoders().First(e => e.FormatID == ImageFormat.Jpeg.Guid);
+        using var parameters = new EncoderParameters(1);
+        parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
+        using var stream = new MemoryStream();
+        // JPEG has no transparency: a window picture is opaque, but flatten on white in case it is not.
+        using var flat = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format24bppRgb);
+        using (var g = Graphics.FromImage(flat))
+        {
+            g.Clear(Color.White);
+            g.DrawImage(bitmap, 0, 0, bitmap.Width, bitmap.Height);
+        }
+        flat.Save(stream, codec, parameters);
+        return stream.ToArray();
+    }
+
     /// <summary>A box smaller than this share of the picture is looked at again, enlarged.</summary>
     public const double SmallWidth = 0.08;
     public const double SmallHeight = 0.06;
@@ -67,7 +102,7 @@ internal static class Vision
         var request = new DecisionRequest(
             DecisionState.Json($"{{\"screen\":\"{key}\"}}"),
             questions,
-            new Dictionary<string, DecisionImage> { [key] = new("png", p.Png) });
+            new Dictionary<string, DecisionImage> { [key] = ForJev(p.Png) });
         var answer = await model.DecideAsync(request, ct).ConfigureAwait(false);
         long tokens = answer.InputTokens;
 
@@ -120,9 +155,7 @@ internal static class Vision
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     g.DrawImage(source, new Rectangle(0, 0, crop.Width, crop.Height), new RectangleF((float)left, (float)top, (float)wPx, (float)hPx), GraphicsUnit.Pixel);
                 }
-                using var stream = new MemoryStream();
-                crop.Save(stream, ImageFormat.Png);
-                png = stream.ToArray();
+                png = Jpeg(crop);
             }
             if (png.Length == 0 || (int)(wPx * scale) < MinSide || (int)(hPx * scale) < MinSide)
                 return null;
@@ -131,7 +164,7 @@ internal static class Vision
             var request = new DecisionRequest(
                 DecisionState.Json($"{{\"screen\":\"{key}\"}}"),
                 new Dictionary<string, DecisionQuestion> { ["f"] = new BoxQuestion($"{first.What} in `screen`") },
-                new Dictionary<string, DecisionImage> { [key] = new("png", png) });
+                new Dictionary<string, DecisionImage> { [key] = new("jpg", png) });
             var answer = await model.DecideAsync(request, ct).ConfigureAwait(false);
             var box = answer.Box("f");
             // Trust the second look when it is at least as sure as the first, or sure on its own.
