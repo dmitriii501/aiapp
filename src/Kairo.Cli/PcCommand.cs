@@ -18,6 +18,8 @@ internal static class PcCommand
         var args = options.Positional;
         if (args.Count == 1 && args[0] == "stats")
             return Stats(userConfigDir);
+        if (args.Count >= 2 && args[0] == "play")
+            return await PlayAsync(options, userConfigDir, secrets);
         if (args.Count < 4 || args[0] != "run")
             return Fail("Usage: kairo pc run <app.exe> \"<sub-goal>\" \"<success criterion>\" [--text name=value]... [--hotkeys \"ctrl+s, enter\"] [--launch] [--steps N]");
 
@@ -137,6 +139,50 @@ internal static class PcCommand
                 Console.WriteLine("    handed to the big model: " + string.Join(", ", app.Handovers.OrderByDescending(h => h.Value).Select(h => $"{h.Key} {h.Value}")));
         }
         return 0;
+    }
+
+    /// <summary><c>kairo pc play &lt;policy.json&gt; [title fragment] [--dry]</c>: a game policy on the open window of its program, with the timings of every tick.</summary>
+    private static async Task<int> PlayAsync(CliOptions options, string userConfigDir, ISecretStore secrets)
+    {
+        var args = options.Positional;
+        if (!File.Exists(args[1]))
+            return Fail($"No such file: {args[1]}");
+        KairoConfig config;
+        try
+        {
+            config = KairoConfig.Load(userConfigDir, userConfigDir, includeProject: false);
+        }
+        catch (FormatException ex)
+        {
+            return Fail(ex.Message);
+        }
+        if (ProviderFactory.DecisionModelOf(config, secrets) is not { } model)
+            return Fail("No Jev key. Enter it in Settings (\"Ключ Jev\") or set TYPESAFE_API_KEY.");
+
+        using var document = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(args[1]));
+        var probe = GamePolicyParser.Parse(document.RootElement, new PcGuard([]));
+        if (probe.Policy is not { } policy)
+            return Fail("The policy has problems:\n- " + string.Join("\n- ", probe.Errors));
+        var guard = new PcGuard([policy.App]);
+        var desktop = new UiaDesktop();
+        var title = args.Count > 2 ? args[2] : null;
+        var window = desktop.Windows().FirstOrDefault(w => w.Process == policy.App && (title is null || w.Title.Contains(title, StringComparison.OrdinalIgnoreCase)));
+        if (window is null)
+            return Fail($"No open window of {policy.App}{(title is null ? "" : $" with '{title}' in its title")}. Open the game first.");
+
+        ConsoleUi.Write(ConsoleColor.Magenta, "Kairo · pc play");
+        ConsoleUi.Write(ConsoleColor.DarkGray, $"  {policy.Goal} · {window.Process} \"{window.Title}\" · Pause stops\n\n");
+        using var cancel = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cancel.Cancel();
+        };
+        var result = await GameRunner.RunAsync(desktop, guard, model, policy, window.Handle, new GameRunOptions(options.PcDry, line => Console.WriteLine("  " + line)), cancel.Token);
+        Console.WriteLine();
+        Console.WriteLine(GameRunner.Describe(result));
+        Console.WriteLine($"Window title now: {desktop.Window(window.Handle)?.Title}");
+        return result.Status == GameStatus.Failed ? 1 : 0;
     }
 
     private static int Fail(string message)

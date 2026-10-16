@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Targets — ready</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #20242c; font: 18px Segoe UI, sans-serif; color: #eee; overflow: hidden; user-select: none; }
+  #bar { height: 44px; display: flex; align-items: center; gap: 24px; padding: 0 16px; background: #14171c; }
+  #field { position: absolute; top: 44px; left: 0; right: 0; bottom: 0; }
+  .dot { position: absolute; width: 74px; height: 74px; border-radius: 50%; border: 3px solid #fff; box-sizing: border-box; cursor: pointer; }
+  .green { background: #2fc15a; }
+  .red { background: #e5484d; }
+  #start { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 18px 44px; font-size: 26px; background: #3b82f6; color: #fff; border: 0; border-radius: 8px; cursor: pointer; }
+  #over { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); font-size: 40px; display: none; text-align: center; }
+</style>
+</head>
+<body>
+<div id="bar"><span id="score">Score: 0</span><span id="miss">Wrong clicks: 0</span><span id="left">Time: 45</span></div>
+<div id="field"></div>
+<button id="start">Start</button>
+<div id="over">Game over<br><small id="final"></small></div>
+<script>
+// A test game for Kairo: green circles appear for 1.4 s and must be clicked, red ones are decoys that must be left alone.
+// The page title carries the result, so a test can read it from the window without asking anybody's opinion.
+const field = document.getElementById('field');
+let score = 0, wrong = 0, left = 45, running = false, spawned = 0, hit = 0, red = 0;
+const el = (id) => document.getElementById(id);
+function title() { document.title = running ? `Targets — score ${score}, wrong ${wrong}, ${left}s` : `Targets — FINISHED score ${score} of ${spawned} green, wrong ${wrong}`; }
+function spawn() {
+  if (!running) return;
+  const dot = document.createElement('div');
+  const isGreen = Math.random() < 0.7;
+  dot.className = 'dot ' + (isGreen ? 'green' : 'red');
+  dot.style.left = (40 + Math.random() * (field.clientWidth - 160)) + 'px';
+  dot.style.top = (30 + Math.random() * (field.clientHeight - 140)) + 'px';
+  if (isGreen) spawned++;
+  dot.onmousedown = () => {
+    if (!dot.parentNode) return;
+    if (isGreen) { score++; } else { wrong++; }
+    el('score').textContent = 'Score: ' + score; el('miss').textContent = 'Wrong clicks: ' + wrong;
+    dot.remove(); title();
+  };
+  field.appendChild(dot);
+  setTimeout(() => dot.remove(), 1400);
+}
+function finish() {
+  running = false; el('over').style.display = 'block'; el('final').textContent = `score ${score} of ${spawned}`; title();
+}
+el('start').onclick = () => {
+  el('start').style.display = 'none'; running = true; score = 0; wrong = 0; spawned = 0; left = 45; title();
+  const tick = setInterval(() => { left--; el('left').textContent = 'Time: ' + left; title(); if (left <= 0) { clearInterval(tick); clearInterval(sp); finish(); } }, 1000);
+  const sp = setInterval(spawn, 1100);
+  spawn();
+};
+</script>
+</body>
+</html>

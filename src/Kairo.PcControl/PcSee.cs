@@ -74,6 +74,42 @@ internal static class Vision
         return stream.ToArray();
     }
 
+    /// <summary>
+    /// The picture for one look of a game policy: the part of the window asked for, no wider than <paramref name="width"/> (smaller is
+    /// faster: the time of a request grows with the pixels), as a JPEG. Also where that part lies in the window picture, in its pixels,
+    /// because the boxes Jev returns are fractions of what it was sent.
+    /// </summary>
+    internal static (DecisionImage Image, double Left, double Top, double Width, double Height) Prepare(Screenshot picture, GameRegion region, int width)
+    {
+        double left = region.Left * picture.Width, top = region.Top * picture.Height;
+        double w = (region.Right - region.Left) * picture.Width, h = (region.Bottom - region.Top) * picture.Height;
+        var scale = Math.Min(1.0, width / w);
+        // Jev rejects pictures under 280 px on a side or 78 400 px in all: a small window is enlarged.
+        var minScale = Math.Max(MinSide / Math.Min(w, h), Math.Sqrt(MinPixels / (w * h)));
+        if (scale * Math.Min(w, h) < MinSide || scale * scale * w * h < MinPixels)
+            scale = Math.Max(scale, minScale * 1.01);
+        var sendW = (int)Math.Round(w * scale);
+        var sendH = (int)Math.Round(h * scale);
+        try
+        {
+            using var source = new Bitmap(new MemoryStream(picture.Png));
+            if (region == GameRegion.Whole && scale >= 0.999 && sendW == source.Width)
+                return (new DecisionImage("jpg", Jpeg(source)), left, top, w, h);
+            using var crop = new Bitmap(sendW, sendH);
+            using (var g = Graphics.FromImage(crop))
+            {
+                g.InterpolationMode = scale < 1 ? InterpolationMode.HighQualityBilinear : InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.DrawImage(source, new Rectangle(0, 0, sendW, sendH), new RectangleF((float)left, (float)top, (float)w, (float)h), GraphicsUnit.Pixel);
+            }
+            return (new DecisionImage("jpg", Jpeg(crop)), left, top, w, h);
+        }
+        catch (ArgumentException)
+        {
+            return (new DecisionImage("png", picture.Png), left, top, w, h);
+        }
+    }
+
     /// <summary>A box smaller than this share of the picture is looked at again, enlarged.</summary>
     public const double SmallWidth = 0.08;
     public const double SmallHeight = 0.06;

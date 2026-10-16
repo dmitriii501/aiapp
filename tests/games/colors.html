@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Colors — ready</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #f4f1ea; font: 20px Segoe UI, sans-serif; color: #222; user-select: none; overflow: hidden; }
+  #bar { height: 44px; display: flex; align-items: center; gap: 24px; padding: 0 16px; background: #e4dfd2; }
+  #ask { margin: 70px auto 30px; text-align: center; font-size: 46px; font-weight: 600; }
+  #buttons { display: grid; grid-template-columns: repeat(2, 260px); gap: 28px; justify-content: center; }
+  .b { height: 110px; border: 0; border-radius: 14px; font-size: 26px; color: #fff; cursor: pointer; }
+  #start { display: block; margin: 40px auto 0; padding: 18px 44px; font-size: 26px; background: #111; color: #fff; border: 0; border-radius: 8px; cursor: pointer; }
+  #over { text-align: center; font-size: 40px; margin-top: 30px; display: none; }
+</style>
+</head>
+<body>
+<div id="bar"><span id="round">Round 0 / 15</span><span id="score">Correct: 0</span></div>
+<div id="ask">Press Start</div>
+<div id="buttons"></div>
+<button id="start">Start</button>
+<div id="over">Game over</div>
+<script>
+// A test game for Kairo: a colour is named in words; click the button of that colour. The buttons change places every round and
+// their labels are NOT the colours (they are random words), so the colour has to be seen. The title carries the result.
+const COLORS = { red: '#d93a3a', green: '#2c9a4b', blue: '#2f64d6', yellow: '#d9a21b' };
+const WORDS = ['Alpha', 'Bravo', 'Delta', 'Echo', 'Gamma', 'Omega', 'Sigma', 'Zeta'];
+const names = Object.keys(COLORS);
+const el = (id) => document.getElementById(id);
+let round = 0, correct = 0, want = '', running = false;
+function title() { document.title = running ? `Colors — round ${round}/15, correct ${correct}` : `Colors — FINISHED correct ${correct} of ${round}`; }
+function next() {
+  round++;
+  if (round > 15) { round = 15; running = false; el('ask').textContent = 'Done'; el('buttons').innerHTML = ''; el('over').style.display = 'block'; title(); return; }
+  want = names[Math.floor(Math.random() * names.length)];
+  el('ask').textContent = `Click the ${want.toUpperCase()} button`;
+  el('round').textContent = `Round ${round} / 15`;
+  const order = [...names].sort(() => Math.random() - 0.5);
+  const words = [...WORDS].sort(() => Math.random() - 0.5);
+  el('buttons').innerHTML = '';
+  order.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'b'; b.style.background = COLORS[c]; b.textContent = words[i];
+    b.onmousedown = () => { if (c === want) { correct++; } el('score').textContent = 'Correct: ' + correct; next(); };
+    el('buttons').appendChild(b);
+  });
+  title();
+}
+el('start').onclick = () => { el('start').style.display = 'none'; running = true; round = 0; correct = 0; next(); };
+</script>
+</body>
+</html>

@@ -25,6 +25,7 @@ internal sealed class CliOptions
     public bool PcKeep { get; private set; }
     public int? PcSteps { get; private set; }
     public bool Help { get; private set; }
+    public bool PcDry { get; private set; }
 
     public const string Usage = """
         Kairo — AI agent for Windows
@@ -40,6 +41,7 @@ internal sealed class CliOptions
           kairo swarm list | status <id> | resume <id> | clean <id>   (clean removes the workers' worktrees and merged branches)
           kairo pc run <app.exe> "<sub-goal>" "<success>"   the fast loop (Jev) on one program, with timings: --text name=value, --hotkeys "ctrl+s", --launch, --steps N
           kairo models list | bench [n] [ids…]   what the gateway offers, and how fast each model answers a tiny request
+          kairo pc play <policy.json> [--dry]   a game policy (rules over what Jev sees) on the open window of its program, with timings of every tick
           kairo jev models | box <image> "what" [model] [rounds]   what Jev offers; where Jev finds something in a picture, and how fast
           kairo jev bench [n]        measure the Jev decision model: latency (cold, warm, parallel) and accuracy on English and Russian UI
 
@@ -73,6 +75,7 @@ internal sealed class CliOptions
             switch (a)
             {
                 case "-h" or "--help": o.Help = true; break;
+                case "--dry": o.PcDry = true; break;
                 case "-p" or "--print": o.Prompt = Next(); break;
                 case "-c" or "--continue": o.Continue = true; break;
                 case "-r" or "--resume": o.Resume = Next(); break;

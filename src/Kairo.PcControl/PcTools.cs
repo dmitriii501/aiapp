@@ -69,7 +69,7 @@ public static class PcTools
             tools.Insert(3, new PcScreenshotTool(session));
         // Looking through Jev sends the picture to a second service: only when the user said so.
         if (config.PcJevVision == true)
-            tools.AddRange([new PcSeeTool(session), new PcClickTool(session)]);
+            tools.AddRange([new PcSeeTool(session), new PcClickTool(session), new PcPlayTool(session)]);
         return tools;
     }
 }

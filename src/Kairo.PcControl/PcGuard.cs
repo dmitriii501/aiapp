@@ -65,6 +65,9 @@ public sealed partial class PcGuard(IEnumerable<string> allowedApps, bool allowA
         return RiskyWords().IsMatch(label) ? $"\"{element.Name}\" looks like a step that is hard to undo" : null;
     }
 
+    /// <summary>Whether a label or a description sounds like a step that is hard to undo (delete, pay, send, close without saving…).</summary>
+    public static bool IsRiskyText(string text) => RiskyWords().IsMatch(text);
+
     private static string? HotkeyRisk(string keys)
     {
         var k = keys.ToLowerInvariant().Replace(" ", "");

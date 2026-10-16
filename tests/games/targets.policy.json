@@ -1,0 +1,15 @@
+{
+  "goal": "Targets game: press Start, then click every green circle and never the red ones, until the game is over",
+  "app": "msedge.exe",
+  "width": 1024,
+  "see": {
+    "find": { "start": "the blue Start button", "green": "the green circle" },
+    "check": { "over": "the words Game over are shown" }
+  },
+  "rules": [
+    { "name": "end", "when": "check.over > 0.8", "do": [ { "stop": "game over" } ] },
+    { "name": "start", "when": "find.start.seen > 0.8", "do": [ { "click": "start" }, { "wait": 500 } ], "cooldown": 4 },
+    { "name": "hit", "when": "find.green.seen > 0.75 && find.green.conf > 0.5", "do": [ { "click": "green" } ] }
+  ],
+  "limits": { "max_seconds": 70, "stall_ticks": 12 }
+}

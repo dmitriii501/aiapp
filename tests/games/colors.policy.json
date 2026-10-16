@@ -1,0 +1,25 @@
+{
+  "goal": "Colors game: press Start, then in each of 15 rounds click the button of the colour the big text names",
+  "app": "msedge.exe",
+  "width": 1024,
+  "see": {
+    "find": {
+      "start": "the black Start button",
+      "red": "the red button",
+      "green": "the green button",
+      "blue": "the blue button",
+      "yellow": "the yellow button"
+    },
+    "check": { "over": "the word Done is shown in large text" },
+    "choose": { "target": { "question": "Which colour does the big sentence at the top tell to click?", "options": { "red": "RED", "green": "GREEN", "blue": "BLUE", "yellow": "YELLOW", "none": "no colour is named" } } }
+  },
+  "rules": [
+    { "name": "end", "when": "check.over > 0.8", "do": [ { "stop": "all rounds played" } ] },
+    { "name": "start", "when": "find.start.seen > 0.8", "do": [ { "click": "start" }, { "wait": 400 } ], "cooldown": 4 },
+    { "name": "red", "when": "choose.target == 'red' && find.red.seen > 0.7", "do": [ { "click": "red" } ] },
+    { "name": "green", "when": "choose.target == 'green' && find.green.seen > 0.7", "do": [ { "click": "green" } ] },
+    { "name": "blue", "when": "choose.target == 'blue' && find.blue.seen > 0.7", "do": [ { "click": "blue" } ] },
+    { "name": "yellow", "when": "choose.target == 'yellow' && find.yellow.seen > 0.7", "do": [ { "click": "yellow" } ] }
+  ],
+  "limits": { "max_seconds": 90, "stall_ticks": 12 }
+}

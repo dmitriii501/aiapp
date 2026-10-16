@@ -51,15 +51,29 @@ public static class BuiltInGuides
         """;
 
     private const string Game = """
-        Playing a game, or working with a window whose element list shows nothing (a canvas, a custom-drawn window), through the fast vision model Jev. It needs the user's setting that lets pictures of windows go to Jev; without it PcSee and PcClick do not exist (then use PcScreenshot and click_at yourself).
+        Playing a game, or working with a window whose element list shows nothing (a canvas, a custom-drawn window), through the fast vision model Jev. It needs the user's setting that lets pictures of windows go to Jev; without it PcSee, PcClick and PcPlay do not exist (then use PcScreenshot and click_at yourself).
 
-        1. Look: PcSee with find = the things you may need to click (cards, buttons, cells, each described so that only one thing fits: "the third card in the second row", "the red Start button") and check = statements about the state ("the level is over", "two cards are face up"). Ask for everything you need for the next move in ONE call: the picture is read once, and the answer takes about half a second.
-        2. Decide yourself. Jev only says where things are and whether a statement holds; the rules and the strategy are yours. Keep what you learned (which card is where) in your own notes between looks, since the screen may change.
-        3. Act: PcClick target="…" for one click, or PcAct click_at / drag_at with the pixel centre PcSee gave and look = its screenshot number (PcBatch for several in a row from the same look, if the screen does not change between them).
-        4. Check the result with a cheap PcSee check before the next move. A box Jev is under 60% sure of, or a small target, can be tens of pixels off: look at the picture once with PcScreenshot when a click did not do what you expected, then describe the target better.
-        5. A thing that is probably not on the screen is reported as NOT SEEN: do not click its box. When many similar things are there, ask for each by position, not "a card".
-        6. About one or two looks a second: games that need faster reactions (shooters, platformers) are out of reach this way. Turn-based and puzzle games, menus and forms are fine.
-        7. For a long game use /goal, so that Kairo keeps you going until it is finished.
+        Two ways, and the choice is the first decision:
+        - REACTION GAMES (click what appears, answer what is asked, press what is shown, repeat a routine): PcPlay. You write a policy ONCE; Kairo then looks every tick (about half a second: one Jev request with all your questions), runs your rules and clicks, with you out of the loop. Measured on test games: 29 of 29 targets clicked and no wrong ones in 45 s; 15 of 15 rounds of "click the named colour" in 12 s. That is two ticks a second at best; a game that needs faster reactions (shooters, platformers) is out of reach.
+        - MOVES THAT NEED YOUR THINKING (puzzles, strategy, anything where the next move depends on what you worked out): PcSee for what is on the screen, you decide, PcClick (or click_at / PcBatch with the pixel centres) to act. One move takes as long as your turn, 8-15 s.
+        You can mix them: PcPlay hands the screen back (a {handover} rule, nothing to do for a while, a limit) with what Jev saw, and you go on by hand.
+
+        Writing a policy for PcPlay:
+        1. Name what you must find (see.find: each described so that only ONE thing fits, such as "the green circle", "the blue Start button", "the third card in the top row"), what to judge (see.check: "a Game over message is shown", answered as a probability), and what to choose among (see.choose: "which colour does the sentence name?" with options). Everything is asked in one request per tick, so asking more costs little; but every find also costs a "is it there" question, so keep to what the rules use.
+        2. Rules, first match per tick: put the end of the game FIRST ({"when": "check.over > 0.8", "do": [{"stop": "game over"}]}), then the start button (with a cooldown of a few ticks), then the reactions. Click with {"click": "findName"}; a click is skipped when Jev is not sure the thing is there or not sure of its box, so a missing thing never gets clicked.
+        3. Use region (fractions of the window) and a smaller width when the game is only part of the screen: the time of a look grows with the pixels (1568 px wide about 1.4 s, 1024 about 0.6 s, a 640 px piece about 0.5 s).
+        4. Variables (vars) and set carry what you need between ticks (a counter, which column is next); expressions can do arithmetic on the positions: {"click": {"x": "find.board.left + col * 100 + 50", "y": "find.board.y"}}.
+        5. ALWAYS run it first with dry_run: true: it looks once and shows what the rules would do. Read what Jev found, fix the descriptions, then run it for real. A rule that never fires, or clicks the wrong thing, shows up there.
+        6. Limits: max_seconds and max_ticks cap the run; stall_ticks stops it when nothing happens or clicks change nothing. The user can stop everything with the Pause key.
+        Example: {"goal":"click the green circles","app":"msedge.exe","see":{"find":{"start":"the blue Start button","green":"the green circle"},"check":{"over":"the words Game over are shown"}},"rules":[{"name":"end","when":"check.over > 0.8","do":[{"stop":"game over"}]},{"name":"start","when":"find.start.seen > 0.8","do":[{"click":"start"},{"wait":500}],"cooldown":4},{"name":"hit","when":"find.green.seen > 0.75 && find.green.conf > 0.5","do":[{"click":"green"}]}],"limits":{"max_seconds":70}}
+
+        Looking and clicking one thing at a time (PcSee, PcClick):
+        1. PcSee with find = the things you may need to click and check = statements about the state; ask for everything you need for the next move in ONE call.
+        2. Decide yourself: Jev only says where things are and whether a statement holds. Keep what you learned (which card is where) in your notes between looks.
+        3. PcClick target="..." for one click, or PcAct click_at / drag_at with the pixel centre PcSee gave and look = its screenshot number (PcBatch for several in a row from the same look when the screen does not change between them).
+        4. A box Jev is under 60% sure of, or a small target, can be tens of pixels off: look at the picture with PcScreenshot when a click did not do what you expected, then describe the target better.
+        5. A thing that is probably not on the screen is reported as NOT SEEN: do not click its box.
+        6. For a long game use /goal, so that Kairo keeps you going until it is finished.
         """;
 
     private const string Browser = """
