@@ -20,6 +20,8 @@ internal static class PcCommand
             return Stats(userConfigDir);
         if (args.Count >= 2 && args[0] == "play")
             return await PlayAsync(options, userConfigDir, secrets);
+        if (args.Count >= 2 && args[0] == "author")
+            return await AuthorAsync(options, userConfigDir, secrets);
         if (args.Count < 4 || args[0] != "run")
             return Fail("Usage: kairo pc run <app.exe> \"<sub-goal>\" \"<success criterion>\" [--text name=value]... [--hotkeys \"ctrl+s, enter\"] [--launch] [--steps N]");
 
@@ -140,6 +142,75 @@ internal static class PcCommand
         }
         return 0;
     }
+
+    /// <summary>
+    /// <c>kairo pc author "&lt;the game, in words&gt;" [--model id] [--save policy.json]</c>: asks a model to write the policy for a game from a
+    /// description, with the same text the agent gets (the PcPlay description and the /game guide), and checks what comes back. A way to
+    /// find out whether a model can write policies, and what it gets wrong.
+    /// </summary>
+    private static async Task<int> AuthorAsync(CliOptions options, string userConfigDir, ISecretStore secrets)
+    {
+        KairoConfig config;
+        try
+        {
+            config = KairoConfig.Load(userConfigDir, userConfigDir, includeProject: false);
+        }
+        catch (FormatException ex)
+        {
+            return Fail(ex.Message);
+        }
+        var provider = ProviderFactory.Create(config, secrets);
+        var model = options.Model ?? ProviderFactory.ModelOf(config);
+        var system = "You drive a Windows PC for the user with tools. The user asks you to play a game in a window. You will call the PcPlay tool with a policy. " +
+                     "Write ONLY that policy as one JSON object, nothing else (no explanation, no code fence).\n\nThe PcPlay tool description:\n" + GamePolicyParser.ToolDescription +
+                     "\n\nThe /game guide:\n" + Kairo.Core.Context.BuiltInGuides.Find("game")!.Body;
+        var request = new Kairo.Core.Models.ModelRequest(model, [Kairo.Core.Models.ChatMessage.UserText(args(options)[1])], system, MaxTokens: 6000);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Kairo.Core.Models.ModelResponse? response = null;
+        await foreach (var ev in provider.StreamAsync(request, default))
+        {
+            if (ev is Kairo.Core.Models.ModelResponse r)
+                response = r;
+        }
+        var text = response?.Message.Text ?? "";
+        ConsoleUi.Write(ConsoleColor.Magenta, "Kairo · pc author");
+        ConsoleUi.Write(ConsoleColor.DarkGray, $"  {model} · {clock.Elapsed.TotalSeconds:0.0} s\n\n");
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start < 0 || end <= start)
+            return Fail("The model wrote no JSON object:\n" + text);
+        var json = text[start..(end + 1)];
+        System.Text.Json.JsonDocument document;
+        try
+        {
+            document = System.Text.Json.JsonDocument.Parse(json);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            return Fail($"The model's JSON does not parse ({ex.Message}):\n{json}");
+        }
+        using (document)
+        {
+            var parsed = GamePolicyParser.Parse(document.RootElement, new PcGuard([]));
+            Console.WriteLine(json);
+            Console.WriteLine();
+            if (parsed.Policy is not { } policy)
+            {
+                ConsoleUi.Write(ConsoleColor.Red, "REFUSED by the policy checker:\n- " + string.Join("\n- ", parsed.Errors) + "\n");
+                return 1;
+            }
+            ConsoleUi.Write(ConsoleColor.Green, "ACCEPTED\n");
+            Console.WriteLine(policy.Describe());
+            if (options.PcSave is { } path)
+            {
+                await File.WriteAllTextAsync(path, json);
+                Console.WriteLine($"Saved to {path}");
+            }
+        }
+        return 0;
+    }
+
+    private static IReadOnlyList<string> args(CliOptions options) => options.Positional;
 
     /// <summary><c>kairo pc play &lt;policy.json&gt; [title fragment] [--dry]</c>: a game policy on the open window of its program, with the timings of every tick.</summary>
     private static async Task<int> PlayAsync(CliOptions options, string userConfigDir, ISecretStore secrets)

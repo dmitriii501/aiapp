@@ -343,13 +343,24 @@ public sealed class UiaDesktop : IDesktop
         var hwnd = (nint)handle;
         if (!Win32.Exists(hwnd))
             throw new InvalidOperationException("The window is gone.");
-        // A window behind another would be photographed with what covers it.
-        if (Win32.Foreground() != hwnd)
+        // A window behind another would be photographed with what covers it: bring it forward, and if something still covers it, do not
+        // photograph it at all (the picture would show another program's window, to a model).
+        (int Left, int Top, int Width, int Height) bounds = default;
+        var visible = false;
+        for (var attempt = 0; attempt < 3 && !visible; attempt++)
         {
-            Win32.BringToFront(hwnd);
-            Thread.Sleep(150);
+            if (Win32.Foreground() != hwnd)
+            {
+                Win32.BringToFront(hwnd);
+                Thread.Sleep(150);
+            }
+            bounds = ScreenCapture.WindowBounds(handle) ?? throw new InvalidOperationException("The window has no size (minimized?).");
+            visible = Win32.MostlyVisible(hwnd, bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+            if (!visible)
+                Thread.Sleep(250);
         }
-        var bounds = ScreenCapture.WindowBounds(handle) ?? throw new InvalidOperationException("The window has no size (minimized?).");
+        if (!visible)
+            throw new InvalidOperationException("Another program covers the window and it could not be brought to the front (Windows keeps the focus where the user is working), so it was not photographed: the picture would show the other program. Bring the window to the front yourself and try again.");
         var picture = ScreenCapture.Region(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
         lock (_gate)
         {

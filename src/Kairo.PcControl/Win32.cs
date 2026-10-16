@@ -186,6 +186,31 @@ internal static unsafe partial class Win32
 
     public static bool Exists(nint hwnd) => IsWindow(hwnd);
 
+    /// <summary>
+    /// Whether the window can really be seen where it is: nine points of it are asked which program is on top there, and about three
+    /// quarters must be the window's own. A picture of the screen's rectangle shows whatever covers it, so a covered window must not be
+    /// photographed (what is under the cover is another program's, and it would go to a model).
+    /// </summary>
+    public static bool MostlyVisible(nint hwnd, int left, int top, int width, int height)
+    {
+        var owner = ProcessOf(hwnd);
+        var real = RealProcess(hwnd, owner).Pid;
+        int total = 0, own = 0;
+        foreach (var fy in new[] { 0.2, 0.5, 0.8 })
+        {
+            foreach (var fx in new[] { 0.2, 0.5, 0.8 })
+            {
+                var at = ProcessAt(left + (int)(width * fx), top + (int)(height * fy));
+                if (at == Environment.ProcessId)
+                    continue; // Kairo's own banner is not a cover
+                total++;
+                if (at == owner || at == real)
+                    own++;
+            }
+        }
+        return total == 0 || own >= Math.Ceiling(total * 0.75);
+    }
+
     public static bool BringToFront(nint hwnd)
     {
         if (IsIconic(hwnd))

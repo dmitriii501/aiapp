@@ -68,7 +68,8 @@ public static class GameRunner
             await warm.WarmUpAsync(ct).ConfigureAwait(false);
         var clock = Stopwatch.StartNew();
         var log = new List<string>();
-        var vars = new Dictionary<string, object>(policy.Vars, StringComparer.Ordinal);
+        // The maps of the policy are copied: a run must not leave its notes in the policy, and a second run starts clean.
+        var vars = policy.Vars.ToDictionary(v => v.Key, v => v.Value is Dictionary<string, object> map ? new Dictionary<string, object>(map, StringComparer.Ordinal) : v.Value, StringComparer.Ordinal);
         var random = new Random(options.Seed);
         var lastFired = new Dictionary<string, int>();
         var fired = new HashSet<string>();
@@ -352,6 +353,25 @@ public static class GameRunner
                     vars[set.Variable] = value;
                 return ($"set {set.Variable} = {Show(value)}", null, false);
             }
+            case PutAction put:
+            {
+                var key = GameExpr.Key(put.Key.Eval(lookup, random.NextDouble));
+                var value = put.Value.Eval(lookup, random.NextDouble);
+                if (!dryRun)
+                    ((Dictionary<string, object>)vars[put.Map])[key] = value;
+                return ($"put {put.Map}[{key}] = {Show(value)}", null, false);
+            }
+            case DelAction del:
+            {
+                var key = GameExpr.Key(del.Key.Eval(lookup, random.NextDouble));
+                if (!dryRun)
+                    ((Dictionary<string, object>)vars[del.Map]).Remove(key);
+                return ($"del {del.Map}[{key}]", null, false);
+            }
+            case ClearAction clear:
+                if (!dryRun)
+                    ((Dictionary<string, object>)vars[clear.Map]).Clear();
+                return ($"clear {clear.Map}", null, false);
             case WaitAction wait:
                 if (!dryRun)
                     await Task.Delay(wait.Milliseconds, ct).ConfigureAwait(false);

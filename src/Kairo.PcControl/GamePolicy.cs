@@ -27,6 +27,13 @@ public sealed record DragAction(string From, string To) : GameAction;
 
 public sealed record KeyAction(string Keys) : GameAction;
 
+/// <summary>Stores a value under a key in a map (a card index and the symbol seen on it, say). Maps are declared under vars as {}.</summary>
+public sealed record PutAction(string Map, GameExpr Key, GameExpr Value) : GameAction;
+
+public sealed record DelAction(string Map, GameExpr Key) : GameAction;
+
+public sealed record ClearAction(string Map) : GameAction;
+
 public sealed record SetAction(string Variable, GameExpr Value) : GameAction;
 
 public sealed record WaitAction(int Milliseconds) : GameAction;
@@ -88,6 +95,9 @@ public sealed record GamePolicy(
         ClickAction c => $"{(c.Button == "left" ? "click" : c.Button + " click")} at ({c.X!.Text}, {c.Y!.Text})",
         DragAction d => $"drag {d.From} to {d.To}",
         KeyAction k => $"press {k.Keys}",
+        PutAction p => $"put {p.Map}[{p.Key.Text}] = {p.Value.Text}",
+        DelAction d => $"del {d.Map}[{d.Key.Text}]",
+        ClearAction c => $"clear {c.Map}",
         SetAction s => $"set {s.Variable} = {s.Value.Text}",
         WaitAction w => $"wait {w.Milliseconds} ms",
         StopAction { Handover: true } s => $"hand over ({s.Reason})",
@@ -103,6 +113,26 @@ public sealed record GamePolicyParse(GamePolicy? Policy, IReadOnlyList<string> E
 
 public static partial class GamePolicyParser
 {
+    /// <summary>What a model needs to know to write a policy; the PcPlay tool shows it as its description.</summary>
+    public const string ToolDescription =
+        "Plays a game, or reacts to a window the element list cannot read, FAST and without you in the loop: you write a policy once; Kairo then " +
+        "looks at the window every tick (one request to the fast vision model Jev, 0.5 to 1 s), runs your rules on the answers and clicks or presses " +
+        "keys, until a rule stops it, a limit is reached, or nothing happens. Use it for reaction-style work (click what appears, answer what is asked, " +
+        "press what is shown, repeat a routine); for moves that need your thinking use PcSee and PcClick one move at a time. " +
+        "Policy (JSON): {goal, app (such as msedge.exe), region? {left, top, right, bottom as fractions of the window: look only at the board, it is faster}, " +
+        "width? (pixels sent to Jev, 320-1568, default 1024; smaller is faster), " +
+        "see: {find: {name: 'short description'} (where is it), check: {name: 'statement'} (probability that it holds), choose: {name: {question, options: {key: 'meaning'}}}}, " +
+        "vars? {name: initial value}, rules: [{name?, when: 'expression', do: [actions], once?, cooldown? (ticks)}], limits? {max_ticks, max_seconds, stall_ticks, tick_ms}}. " +
+        "Every tick the FIRST rule whose when is true runs. Expressions read find.NAME.seen|conf|x|y|w|h|left|top|right|bottom (x, y: the centre in window pixels; seen and conf 0 to 1), " +
+        "check.NAME (0 to 1), choose.NAME (the key chosen) and choose.NAME.conf, tick, elapsed (seconds), idle (ticks in a row nothing was done), and your vars; " +
+        "they use + - * / %, == != < <= > >=, && || !, ( ) and min max abs round floor ceil random. Actions: {click: 'findName'} or {click: {x: 'expr', y: 'expr'}} " +
+        "(button: left, right or double; dx, dy), {drag: {from: 'findName', to: 'findName'}}, {key: 'space'}, {set: 'var = expr'}, {wait: ms}, {stop: 'reason'} when the goal is reached, " +
+        "{put: {map, key, value}}, {del: {map, key}}, {clear: 'map'} (a var declared as {} is a map: notes by key, for what has to be remembered, such as which symbol is on which card; read with get(map, key[, fallback]), has(map, key), count(map), first_free(map, n) (the first number below n that is not a key), find_key(map, value, skipMap, exceptKey) (a key holding that value), pair_a(map, skipMap) and pair_b(map, skipMap) (two keys holding the same value, or -1)), " +
+        "{handover: 'reason'} to get the screen back. A click is skipped when Jev is not sure the thing is there or not sure of its box. " +
+        "Example: {goal:'click the green circles', app:'msedge.exe', see:{find:{green:'the green circle'}, check:{over:'a Game over message is shown'}}, " +
+        "rules:[{when:'check.over > 0.8', do:[{stop:'game over'}]}, {when:'find.green.seen > 0.7', do:[{click:'green'}]}]}. " +
+        "dry_run: true looks once and shows what the rules would do, without doing it: use it first. The screenshots go to Jev (TypeSafe) as well, so this exists only when the user allowed that.";
+
     private static readonly string[] FindFields = ["seen", "conf", "x", "y", "w", "h", "left", "top", "right", "bottom"];
     private static readonly HashSet<string> Reserved = new(["find", "check", "choose", "tick", "elapsed", "idle", "true", "false"], StringComparer.Ordinal);
 
@@ -224,6 +254,21 @@ public static partial class GamePolicyParser
             {
                 if (!NameSyntax().IsMatch(p.Name) || Reserved.Contains(p.Name))
                     Fail($"vars.{p.Name}: a name of letters, digits and _, not one of {string.Join(", ", Reserved)}.");
+                else if (p.Value.ValueKind == JsonValueKind.Object)
+                {
+                    // A map: {} or with a few starting entries.
+                    var map = new Dictionary<string, object>(StringComparer.Ordinal);
+                    foreach (var e in p.Value.EnumerateObject())
+                    {
+                        if (e.Value.ValueKind == JsonValueKind.Number)
+                            map[e.Name] = e.Value.GetDouble();
+                        else if (e.Value.ValueKind == JsonValueKind.String)
+                            map[e.Name] = e.Value.GetString()!;
+                        else
+                            Fail($"vars.{p.Name}.{e.Name}: a number or a text.");
+                    }
+                    vars[p.Name] = map;
+                }
                 else if (p.Value.ValueKind == JsonValueKind.Number)
                     vars[p.Name] = p.Value.GetDouble();
                 else if (p.Value.ValueKind == JsonValueKind.String)
@@ -231,7 +276,7 @@ public static partial class GamePolicyParser
                 else if (p.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
                     vars[p.Name] = p.Value.GetBoolean();
                 else
-                    Fail($"vars.{p.Name}: a number, a text or true/false.");
+                    Fail($"vars.{p.Name}: a number, a text, true/false, or {{}} for a map.");
             }
         }
         if (vars.Count > 30)
@@ -392,12 +437,47 @@ public static partial class GamePolicyParser
             var text = set.ValueKind == JsonValueKind.String ? set.GetString()! : "";
             var eq = text.IndexOf('=');
             var name = eq > 0 ? text[..eq].Trim() : "";
-            if (eq <= 0 || eq + 1 < text.Length && text[eq + 1] == '=' || !vars.ContainsKey(name))
+            if (eq <= 0 || eq + 1 < text.Length && text[eq + 1] == '=' || !vars.ContainsKey(name) || vars[name] is Dictionary<string, object>)
             {
                 fail($"{where}: set is \"name = expression\" with a name declared under vars.");
                 return null;
             }
             return expr(text[(eq + 1)..], $"{where} set {name}") is { } value ? new SetAction(name, value) : null;
+        }
+        if (a.TryGetProperty("put", out var put))
+        {
+            var map = put.ValueKind == JsonValueKind.Object ? Str(put, "map") : null;
+            var keyText = put.ValueKind == JsonValueKind.Object ? Str(put, "key") : null;
+            var value = put.ValueKind == JsonValueKind.Object ? Str(put, "value") : null;
+            if (map is null || keyText is null || value is null || !vars.TryGetValue(map, out var m) || m is not Dictionary<string, object>)
+            {
+                fail($"{where}: put is {{\"map\": \"name\", \"key\": \"expr\", \"value\": \"expr\"}} with a map declared under vars as {{}}.");
+                return null;
+            }
+            var k = expr(keyText, $"{where} put key");
+            var v = expr(value, $"{where} put value");
+            return k is null || v is null ? null : new PutAction(map, k, v);
+        }
+        if (a.TryGetProperty("del", out var del))
+        {
+            var map = del.ValueKind == JsonValueKind.Object ? Str(del, "map") : null;
+            var keyText = del.ValueKind == JsonValueKind.Object ? Str(del, "key") : null;
+            if (map is null || keyText is null || !vars.TryGetValue(map, out var m) || m is not Dictionary<string, object>)
+            {
+                fail($"{where}: del is {{\"map\": \"name\", \"key\": \"expr\"}} with a map declared under vars as {{}}.");
+                return null;
+            }
+            return expr(keyText, $"{where} del key") is { } kd ? new DelAction(map, kd) : null;
+        }
+        if (a.TryGetProperty("clear", out var clear))
+        {
+            var map = clear.ValueKind == JsonValueKind.String ? clear.GetString()! : "";
+            if (!vars.TryGetValue(map, out var m) || m is not Dictionary<string, object>)
+            {
+                fail($"{where}: clear is the name of a map declared under vars as {{}}.");
+                return null;
+            }
+            return new ClearAction(map);
         }
         if (a.TryGetProperty("wait", out var wait))
         {
@@ -413,7 +493,7 @@ public static partial class GamePolicyParser
         if (a.TryGetProperty("handover", out var handover))
             return new StopAction(handover.ValueKind == JsonValueKind.String ? handover.GetString()! : "needs the big model", true);
 
-        fail($"{where}: an action is one of click, drag, key, set, wait, stop, handover.");
+        fail($"{where}: an action is one of click, drag, key, set, put, del, clear, wait, stop, handover.");
         return null;
     }
 

@@ -137,7 +137,10 @@ public sealed class GameExpr
     {
         public override object Eval(Context c)
         {
-            var values = args.Select(a => ToNumber(a.Eval(c))).ToArray();
+            var raw = args.Select(a => a.Eval(c)).ToArray();
+            if (MapFunctions.Contains(name))
+                return MapCall(name, raw);
+            var values = raw.Select(ToNumber).ToArray();
             double One() => values.Length == 1 ? values[0] : throw new GameExprException($"{name}() takes one number.");
             return name switch
             {
@@ -154,7 +157,95 @@ public sealed class GameExpr
         }
     }
 
-    internal static readonly HashSet<string> Functions = ["min", "max", "abs", "round", "floor", "ceil", "random"];
+    internal static readonly HashSet<string> Functions = ["min", "max", "abs", "round", "floor", "ceil", "random", "get", "has", "count", "first_free", "find_key", "pair_a", "pair_b"];
+
+    private static readonly HashSet<string> MapFunctions = ["get", "has", "count", "first_free", "find_key", "pair_a", "pair_b"];
+
+    /// <summary>The key a number or a text is stored under: 3 and "3" are the same key.</summary>
+    public static string Key(object value) => value switch
+    {
+        double d => d.ToString("0.###", CultureInfo.InvariantCulture),
+        bool b => b ? "true" : "false",
+        string s => s,
+        _ => throw new GameExprException("A key is a number or a text."),
+    };
+
+    private static Dictionary<string, object> Map(object[] raw, int index, string function) =>
+        raw.Length > index && raw[index] is Dictionary<string, object> map
+            ? map
+            : throw new GameExprException($"{function}(): argument {index + 1} must be a map (declared in vars as {{}}).");
+
+    private static object MapCall(string name, object[] raw)
+    {
+        void Arity(int min, int max)
+        {
+            if (raw.Length < min || raw.Length > max)
+                throw new GameExprException($"{name}() takes {(min == max ? min.ToString(CultureInfo.InvariantCulture) : $"{min} to {max}")} arguments, not {raw.Length}.");
+        }
+
+        switch (name)
+        {
+            case "get": // get(map, key) or get(map, key, fallback): what is stored, or the fallback (default: an empty text)
+                Arity(2, 3);
+                return Map(raw, 0, name).TryGetValue(Key(raw[1]), out var stored) ? stored : raw.Length == 3 ? raw[2] : "";
+            case "has":
+                Arity(2, 2);
+                return Map(raw, 0, name).ContainsKey(Key(raw[1]));
+            case "count":
+                Arity(1, 1);
+                return (double)Map(raw, 0, name).Count;
+            case "first_free": // first_free(map, n): the smallest whole number from 0 to n-1 that is not a key of the map, or -1
+            {
+                Arity(2, 2);
+                var map = Map(raw, 0, name);
+                var n = (int)ToNumber(raw[1]);
+                for (var i = 0; i < n; i++)
+                {
+                    if (!map.ContainsKey(i.ToString(CultureInfo.InvariantCulture)))
+                        return (double)i;
+                }
+                return -1.0;
+            }
+            case "find_key": // find_key(map, value, skip, except): a key whose value equals value, not in the skip map, not the key except; or -1
+            {
+                Arity(4, 4);
+                var map = Map(raw, 0, name);
+                var skip = Map(raw, 2, name);
+                var except = Key(raw[3]);
+                foreach (var (key, value) in map)
+                {
+                    if (key != except && !skip.ContainsKey(key) && Same(value, raw[1]))
+                        return Number(key);
+                }
+                return -1.0;
+            }
+            default: // pair_a(map, skip) / pair_b(map, skip): the first two keys, not in skip, that hold the same value; or -1
+            {
+                Arity(2, 2);
+                var map = Map(raw, 0, name);
+                var skip = Map(raw, 1, name);
+                var entries = map.Where(e => !skip.ContainsKey(e.Key)).ToList();
+                for (var i = 0; i < entries.Count; i++)
+                {
+                    for (var j = i + 1; j < entries.Count; j++)
+                    {
+                        if (Same(entries[i].Value, entries[j].Value))
+                            return Number(name == "pair_a" ? entries[i].Key : entries[j].Key);
+                    }
+                }
+                return -1.0;
+            }
+        }
+    }
+
+    private static bool Same(object a, object b) => (a, b) switch
+    {
+        (string s, string t) => string.Equals(s, t, StringComparison.OrdinalIgnoreCase),
+        (string, _) or (_, string) => false,
+        _ => Math.Abs(ToNumber(a) - ToNumber(b)) < 1e-9,
+    };
+
+    private static object Number(string key) => double.TryParse(key, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : key;
 
     private static double ToNumber(object value) => value switch
     {

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Memory — ready</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1d2330; font: 20px Segoe UI, sans-serif; color: #eee; user-select: none; overflow: hidden; }
+  #bar { height: 44px; display: flex; align-items: center; gap: 24px; padding: 0 16px; background: #131822; }
+  #board { display: grid; grid-template-columns: repeat(4, 130px); grid-auto-rows: 130px; gap: 16px; justify-content: center; margin-top: 40px; }
+  .card { border-radius: 12px; background: #3b4560; display: flex; align-items: center; justify-content: center; font-size: 84px; cursor: pointer; border: 6px solid transparent; box-sizing: border-box; }
+  .up { background: #f3efe4; }
+  .last { border-color: #ffd21f; }
+  .done { background: #cfe9d4; border-color: #2c9a4b; cursor: default; }
+  #over { text-align: center; font-size: 36px; margin-top: 24px; display: none; }
+</style>
+</head>
+<body>
+<div id="bar"><span id="pairs">Pairs: 0 / 6</span><span id="moves">Moves: 0</span></div>
+<div id="board"></div>
+<div id="over">All pairs found</div>
+<script>
+// A test game for Kairo: 12 cards, 6 pairs of symbols. Turn two cards over; a pair stays, anything else turns back after 0.8 s.
+// The card turned over last has a yellow outline, so that a looker can tell which card it should read. The title carries the result.
+const SYMBOLS = [['★', '#d99a00'], ['●', '#2f64d6'], ['▲', '#2c9a4b'], ['■', '#d93a3a'], ['♥', '#d6479a'], ['◆', '#7a4fd1']];
+const deck = [...SYMBOLS, ...SYMBOLS].map((s, i) => ({ s, i })).sort(() => Math.random() - 0.5);
+const board = document.getElementById('board');
+let first = null, locked = false, pairs = 0, moves = 0, flips = 0;
+function title(done) { document.title = done ? `Memory — FINISHED pairs ${pairs} in ${moves} moves` : `Memory — pairs ${pairs}/6, moves ${moves}`; }
+deck.forEach((c, idx) => {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.onmousedown = () => {
+    if (locked || el.classList.contains('up') || el.classList.contains('done')) return;
+    document.querySelectorAll('.last').forEach((x) => x.classList.remove('last'));
+    el.classList.add('up', 'last'); el.textContent = c.s[0]; el.style.color = c.s[1]; flips++;
+    if (!first) { first = { el, c }; return; }
+    moves++; document.getElementById('moves').textContent = 'Moves: ' + moves;
+    if (first.c.s[0] === c.s[0]) {
+      [first.el, el].forEach((x) => { x.classList.remove('up'); x.classList.add('done'); });
+      pairs++; document.getElementById('pairs').textContent = `Pairs: ${pairs} / 6`; first = null;
+      if (pairs === 6) { document.getElementById('over').style.display = 'block'; title(true); return; }
+    } else {
+      locked = true; const a = first; first = null;
+      setTimeout(() => { [a.el, el].forEach((x) => { x.classList.remove('up', 'last'); x.textContent = ''; }); locked = false; }, 800);
+    }
+    title(false);
+  };
+  board.appendChild(el);
+});
+</script>
+</body>
+</html>
