@@ -36,8 +36,10 @@ internal static class JevCommand
 
     public static async Task<int> RunAsync(CliOptions options, string userConfigDir, ISecretStore secrets)
     {
+        if (options.Positional.FirstOrDefault() is "models" or "box" or "boxeval")
+            return await JevVision.RunAsync(options, secrets).ConfigureAwait(false);
         if (options.Positional.FirstOrDefault() is not ("bench" or "probe"))
-            return Fail("Usage: kairo jev bench [n] | kairo jev probe");
+            return Fail("Usage: kairo jev bench [n] | kairo jev probe | kairo jev models | kairo jev box <image> \"what to find\" [model] [rounds]");
 
         KairoConfig config;
         try

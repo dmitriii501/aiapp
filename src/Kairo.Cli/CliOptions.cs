@@ -40,6 +40,7 @@ internal sealed class CliOptions
           kairo swarm list | status <id> | resume <id> | clean <id>   (clean removes the workers' worktrees and merged branches)
           kairo pc run <app.exe> "<sub-goal>" "<success>"   the fast loop (Jev) on one program, with timings: --text name=value, --hotkeys "ctrl+s", --launch, --steps N
           kairo models list | bench [n] [ids…]   what the gateway offers, and how fast each model answers a tiny request
+          kairo jev models | box <image> "what" [model] [rounds]   what Jev offers; where Jev finds something in a picture, and how fast
           kairo jev bench [n]        measure the Jev decision model: latency (cold, warm, parallel) and accuracy on English and Russian UI
 
         Options:
