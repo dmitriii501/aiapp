@@ -562,7 +562,7 @@ internal sealed class PcActTool(PcSession session) : ITool
         if (kind == DesktopActionKind.Hotkey)
         {
             if (text is null || !PcGuard.IsValidHotkey(text))
-                throw new ToolInputException("hotkey needs text such as ctrl+s: modifiers (ctrl, alt, shift) and one key. The Windows key is not allowed.");
+                throw new ToolInputException($"hotkey needs text such as ctrl+s: modifiers (ctrl, alt, shift) and one key; you sent {(string.IsNullOrWhiteSpace(text) ? "nothing" : "'" + text.Trim() + "'")}. Keys: a letter, a digit, f1-f12, enter, tab, esc, space, backspace, delete, home, end, pageup, pagedown, up, down, left, right (written like that, lowercase, no underscores). The Windows key is not allowed. To type a word or a sign use type_text.");
             return (window, new DesktopAction(kind, ToolInput.OptionalInt(input, "look") ?? 0, null, text.Trim().ToLowerInvariant()), verb);
         }
 
