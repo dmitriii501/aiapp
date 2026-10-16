@@ -107,6 +107,8 @@ export interface Settings {
   pcAutonomous?: boolean;
   /** Every program may be controlled except terminals, password managers and system tools. */
   pcAllApps?: boolean;
+  /** A screenshot of the window may go to Jev (a second service) so that PcSee and PcClick can find things in it. */
+  pcJevVision?: boolean;
 }
 
 export interface PcApp {
@@ -128,6 +130,7 @@ export interface SettingsUpdate {
   pcVision?: boolean;
   pcAutonomous?: boolean;
   pcAllApps?: boolean;
+  pcJevVision?: boolean;
 }
 
 export interface Workspace {

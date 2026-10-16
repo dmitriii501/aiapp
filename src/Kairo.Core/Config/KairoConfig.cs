@@ -141,6 +141,15 @@ public sealed class KairoConfig
     /// <summary>Pinned Jev model (<c>[decision] model</c>, default <c>jev-1.13.0</c>). User's file only.</summary>
     public string? DecisionModel { get; set; }
 
+    /// <summary>Pinned Jev model for requests with pictures (<c>[decision] vision_model</c>, default <c>jev-1.14.0</c>). User's file only.</summary>
+    public string? DecisionVisionModel { get; set; }
+
+    /// <summary>
+    /// PcSee and click_target may send a screenshot of the window to Jev (<c>[pc] jev_vision</c>, default off). The picture goes to a second
+    /// service besides the model the user chose, so this is the user's call alone.
+    /// </summary>
+    public bool? PcJevVision { get; set; }
+
     /// <summary>Address of the Jev API or a gateway in front of it (<c>[decision] url</c>). It receives what the screen shows: user's file only.</summary>
     public string? DecisionUrl { get; set; }
 
@@ -194,12 +203,14 @@ public sealed class KairoConfig
             var userHooks = config.Hooks.ToList();
             var (check, auto, url, search, searxng) = (config.UpdateCheck, config.UpdateAuto, config.UpdateUrl, config.WebSearch, config.SearxngUrl);
             var (decisionModel, decisionUrl, decisionDeadline) = (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs);
+            var (decisionVision, pcJevVision) = (config.DecisionVisionModel, config.PcJevVision);
             var (pcEnabled, pcMaxSteps, pcMinConfidence, pcApps, pcOverlay, pcVision, pcAutonomous, pcAllApps, pcCalibrate, pcSemantic) = (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcApps.ToList(), config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps, config.PcCalibrate, config.PcSemanticChecks);
             var userRead = config.SandboxRead.ToList();
             var (sandbox, sandboxNetwork, sandboxMemory) = (config.SandboxShell, config.SandboxNetwork, config.SandboxMemoryMb);
             config.Merge(Path.Combine(workingDirectory, ".kairo", "config.toml"));
             (config.UpdateCheck, config.UpdateAuto, config.UpdateUrl, config.WebSearch, config.SearxngUrl) = (check, auto, url, search, searxng);
             (config.DecisionModel, config.DecisionUrl, config.DecisionDeadlineMs) = (decisionModel, decisionUrl, decisionDeadline);
+            (config.DecisionVisionModel, config.PcJevVision) = (decisionVision, pcJevVision);
             // Which programs may be driven is the user's call alone.
             (config.PcEnabled, config.PcMaxSteps, config.PcMinConfidence, config.PcOverlay, config.PcVision, config.PcAutonomous, config.PcAllApps, config.PcCalibrate, config.PcSemanticChecks) = (pcEnabled, pcMaxSteps, pcMinConfidence, pcOverlay, pcVision, pcAutonomous, pcAllApps, pcCalibrate, pcSemantic);
             config.PcApps.Clear();
@@ -351,6 +362,8 @@ public sealed class KairoConfig
                 PcSemanticChecks = semanticChecks;
             if (pc.TryGetValue("autonomous", out var autoValue) && autoValue is bool autonomous)
                 PcAutonomous = autonomous;
+            if (pc.TryGetValue("jev_vision", out var jevVisionValue) && jevVisionValue is bool jevVision)
+                PcJevVision = jevVision;
             if (pc.TryGetValue("max_steps", out var steps) && steps is long stepCount)
                 PcMaxSteps = (int)Math.Clamp(stepCount, 0, 100000);
             if (pc.TryGetValue("min_confidence", out var minConf))
@@ -364,6 +377,7 @@ public sealed class KairoConfig
         if (table.TryGetValue("decision", out var decisionValue) && decisionValue is TomlTable decision)
         {
             DecisionModel = String(decision, "model") ?? DecisionModel;
+            DecisionVisionModel = String(decision, "vision_model") ?? DecisionVisionModel;
             if (String(decision, "url") is { } decisionUrl)
             {
                 if (!Uri.TryCreate(decisionUrl, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps && !parsed.IsLoopback)

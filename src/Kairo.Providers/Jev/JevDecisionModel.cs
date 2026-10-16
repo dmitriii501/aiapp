@@ -18,6 +18,15 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
 {
     /// <summary>Pinned on purpose: confidence thresholds are tuned per release, and an alias can move under them.</summary>
     public const string DefaultModel = "jev-1.13.0";
+
+    /// <summary>Pictures and box questions need 1.14 (1.13 takes pictures but cannot say where something is); pinned for the same reason.</summary>
+    public const string DefaultVisionModel = "jev-1.14.0";
+
+    /// <summary>A request with a picture takes longer than a text one (measured: 0.3 to 0.8 s, now and then 3 s).</summary>
+    public static readonly TimeSpan DefaultImageDeadline = TimeSpan.FromSeconds(8);
+
+    /// <summary>Jev's limit for all pictures of one request.</summary>
+    internal const int MaxImageBytes = 24 * 1024 * 1024;
     public static readonly Uri DefaultBaseUri = new("https://api.typesafe.ai/");
 
     /// <summary>A decision that takes longer than this is of no use to a live loop; the caller escalates instead.</summary>
@@ -35,14 +44,16 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
     private readonly Uri _endpoint;
     private readonly string _apiKey;
     private readonly string _model;
+    private readonly string _visionModel;
     private readonly TimeSpan _deadline;
 
-    public JevDecisionModel(string apiKey, HttpClient? http = null, Uri? baseUri = null, string? model = null, TimeSpan? deadline = null)
+    public JevDecisionModel(string apiKey, HttpClient? http = null, Uri? baseUri = null, string? model = null, TimeSpan? deadline = null, string? visionModel = null)
     {
         _apiKey = apiKey;
         _http = http ?? SharedClient.Value;
         _endpoint = new Uri((baseUri ?? DefaultBaseUri).ToString().TrimEnd('/') + "/v1/systemone");
         _model = string.IsNullOrWhiteSpace(model) ? DefaultModel : model.Trim();
+        _visionModel = string.IsNullOrWhiteSpace(visionModel) ? DefaultVisionModel : visionModel.Trim();
         _deadline = deadline is { } d && d > TimeSpan.Zero ? d : DefaultDeadline;
     }
 
@@ -86,10 +97,11 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
 
     public async Task<DecisionResult> DecideAsync(DecisionRequest request, CancellationToken ct)
     {
-        var body = BuildBody(request, _model);
+        var withImages = request.Images is { Count: > 0 } || request.Questions.Values.Any(q => q is BoxQuestion);
+        var body = BuildBody(request, withImages ? _visionModel : _model);
         var clock = Stopwatch.StartNew();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(_deadline);
+        deadline.CancelAfter(withImages && _deadline < DefaultImageDeadline ? DefaultImageDeadline : _deadline);
 
         for (var attempt = 0; ; attempt++)
         {
@@ -98,6 +110,8 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
             {
                 using var message = new HttpRequestMessage(HttpMethod.Post, _endpoint) { Content = new ReadOnlyMemoryContent(body) };
                 message.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                if (withImages)
+                    message.Headers.Add("TypeSafe-Danger-Zone-Images", "true"); // Jev asks for this on every request with a picture or a box question
                 message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
                 response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
             }
@@ -199,6 +213,9 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
                             json.WriteStringValue(level);
                         json.WriteEndArray();
                         break;
+                    case BoxQuestion:
+                        json.WriteString("type", "box");
+                        break;
                     case YesNoQuestion yesNo:
                         json.WriteString("type", "noul");
                         if (yesNo.WhenYes is not null || yesNo.WhenNo is not null)
@@ -215,12 +232,27 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
                 json.WriteEndObject();
             }
             json.WriteEndObject();
+            if (request.Images is { Count: > 0 } images)
+            {
+                json.WriteStartObject("assets");
+                foreach (var (key, image) in images)
+                {
+                    json.WriteStartObject(key);
+                    json.WriteString("type", "image");
+                    json.WriteString("format", image.Format);
+                    json.WriteString("data_base64", Convert.ToBase64String(image.Data));
+                    json.WriteEndObject();
+                }
+                json.WriteEndObject();
+            }
             json.WriteEndObject();
         }
 
-        if (buffer.WrittenCount > MaxRequestBytes)
+        // The window of 32k tokens is for the text; the pictures are counted apart, by their size.
+        var pictureBytes = request.Images?.Values.Sum(i => (long)i.Data.Length * 4 / 3) ?? 0;
+        if (buffer.WrittenCount - pictureBytes > MaxRequestBytes)
             throw new DecisionException(
-                $"The request is too large for Jev (about {buffer.WrittenCount / 3:N0} tokens, the limit is 32k for the state and the longest question). Shrink the state.",
+                $"The request is too large for Jev (about {(buffer.WrittenCount - pictureBytes) / 3:N0} tokens, the limit is 32k for the state and the longest question). Shrink the state.",
                 DecisionFailure.Invalid);
         return buffer.WrittenSpan.ToArray();
     }
@@ -229,6 +261,16 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
     {
         if (request.Questions.Count == 0)
             throw new DecisionException("There is nothing to decide: no questions.", DecisionFailure.Invalid);
+
+        if (request.Questions.Values.Any(q => q is BoxQuestion) && request.Images is not { Count: > 0 })
+            throw new DecisionException("A box question needs a picture in the request.", DecisionFailure.Invalid);
+        if (request.Images is { Count: > 0 } pictures)
+        {
+            if (pictures.Values.Any(i => i.Format is not ("png" or "jpg" or "jpeg") || i.Data.Length == 0))
+                throw new DecisionException("Pictures must be png or jpg and not empty.", DecisionFailure.Invalid);
+            if (pictures.Values.Sum(i => (long)i.Data.Length) > MaxImageBytes)
+                throw new DecisionException("The pictures are larger than Jev takes in one request.", DecisionFailure.Invalid);
+        }
 
         foreach (var (id, question) in request.Questions)
         {
@@ -268,6 +310,7 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
             {
                 ChoiceQuestion choice => ParseChoice(id, a, choice),
                 ScoreQuestion score => ParseScore(id, a, score),
+                BoxQuestion => ParseBox(id, a),
                 _ => new YesNoAnswer(Probability(id, a, "noul")),
             };
         }
@@ -291,6 +334,22 @@ public sealed class JevDecisionModel : IDecisionModel, IWarmUp
         if (!a.TryGetProperty("score", out var s) || !s.TryGetDouble(out var score) || double.IsNaN(score))
             throw new DecisionException($"Jev's answer to '{id}' has no score.");
         return new ScoreAnswer(Math.Clamp(score, 0, question.Levels.Count - 1), Probability(id, a, "confidence"), Probabilities(a));
+    }
+
+    private static BoxAnswer ParseBox(string id, JsonElement a)
+    {
+        if (!a.TryGetProperty("box", out var b) || b.ValueKind != JsonValueKind.Object)
+            throw new DecisionException($"Jev's answer to '{id}' has no box.");
+        double Edge(string name) =>
+            b.TryGetProperty(name, out var v) && v.TryGetDouble(out var d) && !double.IsNaN(d) ? Math.Clamp(d, 0, 1) : throw new DecisionException($"Jev's box for '{id}' has no '{name}'.");
+        var left = Edge("left");
+        var top = Edge("top");
+        var right = Edge("right");
+        var bottom = Edge("bottom");
+        if (right <= left || bottom <= top)
+            throw new DecisionException($"Jev's box for '{id}' has no area.");
+        double? confidence = a.TryGetProperty("confidence", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetDouble(out var cd) ? Math.Clamp(cd, 0, 1) : null;
+        return new BoxAnswer(left, top, right, bottom, confidence);
     }
 
     private static double Probability(string id, JsonElement a, string field)

@@ -55,7 +55,8 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
             PcApps: config.PcApps.ToList(),
             PcVision: config.PcVision ?? false,
             PcAutonomous: config.PcAutonomous ?? false,
-            PcAllApps: config.PcAllApps ?? false);
+            PcAllApps: config.PcAllApps ?? false,
+            PcJevVision: config.PcJevVision ?? false);
     }
 
     public Settings Update(SettingsUpdate update)
@@ -111,6 +112,14 @@ public sealed class SettingsService(string userConfigDirectory, ISecretStore sec
                     pc["autonomous"] = true;
                 else
                     pc.Remove("autonomous");
+            }
+            if (update.PcJevVision is { } pcJevVision)
+            {
+                var pc = KairoConfig.Section(table, "pc");
+                if (pcJevVision)
+                    pc["jev_vision"] = true;
+                else
+                    pc.Remove("jev_vision");
             }
             if (update.PcAllApps is { } pcAllApps)
             {

@@ -67,6 +67,9 @@ public static class PcTools
         // Pictures only when the user said the model can read them: otherwise the tool would only waste tokens.
         if (config.PcVision == true)
             tools.Insert(3, new PcScreenshotTool(session));
+        // Looking through Jev sends the picture to a second service: only when the user said so.
+        if (config.PcJevVision == true)
+            tools.AddRange([new PcSeeTool(session), new PcClickTool(session)]);
         return tools;
     }
 }

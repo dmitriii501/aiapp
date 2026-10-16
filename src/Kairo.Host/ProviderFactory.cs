@@ -67,7 +67,8 @@ public static class ProviderFactory
             key,
             baseUri: config.DecisionUrl is { } url ? new Uri(url) : null,
             model: config.DecisionModel,
-            deadline: config.DecisionDeadlineMs is { } ms ? TimeSpan.FromMilliseconds(ms) : null);
+            deadline: config.DecisionDeadlineMs is { } ms ? TimeSpan.FromMilliseconds(ms) : null,
+            visionModel: config.DecisionVisionModel);
     }
 
     public static WebSearchSettings WebSearchOf(KairoConfig config, ISecretStore secrets) =>

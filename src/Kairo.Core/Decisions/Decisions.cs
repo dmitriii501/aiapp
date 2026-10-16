@@ -21,6 +21,16 @@ public sealed record ScoreQuestion(string Instructions, IReadOnlyList<string> Le
 /// <summary>A yes/no question; the answer is the probability of yes. <paramref name="WhenYes"/> and <paramref name="WhenNo"/> say what each answer means.</summary>
 public sealed record YesNoQuestion(string Instructions, string? WhenYes = null, string? WhenNo = null) : DecisionQuestion(Instructions);
 
+/// <summary>
+/// Find where something is in a picture. The answer is a rectangle, always: a target that is not there still gets one, so ask a
+/// <see cref="YesNoQuestion"/> about its presence next to it. Needs a request with <see cref="DecisionRequest.Images"/>.
+/// </summary>
+public sealed record BoxQuestion(string Instructions) : DecisionQuestion(Instructions);
+
+/// <summary>A picture that goes with a request. Its key is written in the state or in a question's text where the picture belongs.</summary>
+/// <param name="Format">png or jpg.</param>
+public sealed record DecisionImage(string Format, byte[] Data);
+
 /// <summary>What the questions are about, as text or JSON. Names the parts (an object) rather than one long string.</summary>
 public sealed record DecisionState(JsonElement Value)
 {
@@ -33,7 +43,8 @@ public sealed record DecisionState(JsonElement Value)
     }
 }
 
-public sealed record DecisionRequest(DecisionState State, IReadOnlyDictionary<string, DecisionQuestion> Questions)
+/// <param name="Images">Pictures by key; the key stands for the picture wherever it appears in the state or the instructions.</param>
+public sealed record DecisionRequest(DecisionState State, IReadOnlyDictionary<string, DecisionQuestion> Questions, IReadOnlyDictionary<string, DecisionImage>? Images = null)
 {
     public static DecisionRequest Single(DecisionState state, string id, DecisionQuestion question) =>
         new(state, new Dictionary<string, DecisionQuestion> { [id] = question });
@@ -51,6 +62,18 @@ public sealed record ScoreAnswer(double Score, double Confidence, IReadOnlyDicti
 /// <param name="Probability">Probability of yes, 0 to 1. Yes/no answers have no separate confidence: the probability is it.</param>
 public sealed record YesNoAnswer(double Probability) : DecisionAnswer;
 
+/// <summary>A rectangle as fractions of the picture (0 to 1, from the top left corner). <paramref name="Confidence"/> is null when the model gives none.</summary>
+public sealed record BoxAnswer(double Left, double Top, double Right, double Bottom, double? Confidence) : DecisionAnswer
+{
+    public double CentreX => (Left + Right) / 2;
+
+    public double CentreY => (Top + Bottom) / 2;
+
+    public double Width => Right - Left;
+
+    public double Height => Bottom - Top;
+}
+
 /// <param name="Model">The versioned model that answered (an alias can move to a new release).</param>
 /// <param name="Elapsed">Wall time of the request, for the latency numbers the policy and the settings show.</param>
 public sealed record DecisionResult(string Model, IReadOnlyDictionary<string, DecisionAnswer> Answers, long InputTokens, TimeSpan Elapsed)
@@ -58,6 +81,8 @@ public sealed record DecisionResult(string Model, IReadOnlyDictionary<string, De
     public ChoiceAnswer Choice(string id) => Get<ChoiceAnswer>(id);
 
     public ScoreAnswer Score(string id) => Get<ScoreAnswer>(id);
+
+    public BoxAnswer Box(string id) => Get<BoxAnswer>(id);
 
     public YesNoAnswer YesNo(string id) => Get<YesNoAnswer>(id);
 
